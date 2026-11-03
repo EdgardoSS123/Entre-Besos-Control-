@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [control.html, control.css, control.js, Dockerfile, '.github/workflows/verify-published.yml']
+    paths: [control.html, control.css, control.js, production.css, Dockerfile, 'tests/**', '.github/workflows/verify-published.yml']
 permissions:
   contents: read
 concurrency:
@@ -26,7 +26,7 @@ jobs:
               assert r.status==200
               return r.read()
           expected=read(src+'control.js')
-          for attempt in range(30):
+          for attempt in range(40):
               try:
                   if read(root+'control.js?check='+os.environ['GITHUB_SHA'])==expected:
                       break
@@ -35,63 +35,15 @@ jobs:
               time.sleep(5)
           else:
               raise AssertionError('New JavaScript has not reached the public domain')
-          for path, original in [('index.html','control.html'),('control.css','control.css'),('control.js','control.js'),('legacy.html','index.html'),('EB logo.jpg','EB logo.jpg'),('EB espadin.jpg','EB espadin.jpg'),('EB Cup.jpg','EB Cup.jpg'),('EB DB.jpg','EB DB.jpg')]:
+          for path, original in [('index.html','control.html'),('control.css','control.css'),('production.css','production.css'),('control.js','control.js'),('legacy.html','index.html'),('EB logo.jpg','EB logo.jpg'),('EB espadin.jpg','EB espadin.jpg'),('EB Cup.jpg','EB Cup.jpg'),('EB DB.jpg','EB DB.jpg')]:
               got=read(root+urllib.parse.quote(path)+'?check='+os.environ['GITHUB_SHA'])
               wanted=read(src+urllib.parse.quote(original))
               assert hashlib.sha256(got).digest()==hashlib.sha256(wanted).digest(),path
               print('PUBLIC HTTP 200 + ORIGINAL HASH VERIFIED:',path)
+          with open('/tmp/eb-browser-liters.py','wb') as f:
+              f.write(read(src+'tests/browser-liters.py'))
           PY
       - name: Install pinned browser test driver
         run: python3 -m pip install playwright==1.56.0
-      - name: Test actual published desktop and mobile workflows
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import shutil, subprocess, sys
-          from playwright.sync_api import sync_playwright
-          chrome=shutil.which('google-chrome') or shutil.which('chromium')
-          if not chrome:
-              subprocess.run([sys.executable,'-m','playwright','install','--with-deps','chromium'],check=True)
-          with sync_playwright() as p:
-              options={'headless':True}
-              if chrome: options['executable_path']=chrome
-              browser=p.chromium.launch(**options)
-              for width,height in [(1440,1000),(390,844)]:
-                  context=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
-                  page=context.new_page(); errors=[]
-                  page.on('pageerror',lambda e:errors.append(str(e)))
-                  page.goto('https://entre-besos-web-production.up.railway.app/?check=costos31',wait_until='networkidle')
-                  page.locator('#lot-id').wait_for()
-                  page.wait_for_function('Array.from(document.images).every(i=>i.complete && i.naturalWidth>0)')
-                  assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'), 'Horizontal overflow'
-                  assert page.locator('main input').first.get_attribute('id')=='lot-id'
-                  assert page.locator('.cost-table tbody tr').count()==14
-                  page.locator('#lot-id').fill('CI-TEST-01')
-                  page.locator('#bottles').fill('600')
-                  page.locator('#liquid').fill('200')
-                  for i,v in enumerate([20,5,3,4,2,1,60,1,600,1200,600,1800,300]):
-                      page.locator('#amount-'+str(i)).fill(str(v))
-                  assert page.locator('#liquid-converted').inner_text()=='$144.00'
-                  assert page.locator('#unit-total').inner_text()=='$197.50'
-                  assert page.locator('#total-result').inner_text()=='$118,500.00'
-                  save='#mobile-save-button' if width<700 else '#save-lot'
-                  page.locator(save).click()
-                  assert page.locator('.saved-lot').count()==1
-                  page.reload(); page.locator('#lot-id').wait_for()
-                  assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots[0].unitCost")==197.5
-                  page.locator('#show-lots').click()
-                  page.locator('[data-copy]').click()
-                  page.locator('#lot-id').fill('CI-TEST-02')
-                  page.locator('#liquid').fill('250')
-                  page.locator(save).click()
-                  assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots.map(x=>x.unitCost)")==[197.5,233.5]
-                  page.locator('[data-edit="CI-TEST-01"]').click()
-                  page.locator('#amount-0').fill('21')
-                  page.locator(save).click()
-                  assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots.map(x=>x.unitCost)")==[198.5,233.5]
-                  assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lotRevisions[0].record.unitCost")==197.5
-                  assert not errors, errors
-                  print('PASS PUBLIC BROWSER:',width,'images, 14 costs, calculation, save, reload, independent lots and edit history')
-                  context.close()
-              browser.close()
-          PY
+      - name: Test published liters, losses, materials and preserved records
+        run: python3 /tmp/eb-browser-liters.py
