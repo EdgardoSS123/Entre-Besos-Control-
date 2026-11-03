@@ -1,0 +1,32 @@
+'use strict';
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const source = fs.readFileSync('control.js', 'utf8');
+function range(start, end) {
+  const a = source.indexOf(start), b = source.indexOf(end, a);
+  assert.ok(a >= 0 && b > a, 'Required cost function is present');
+  return source.slice(a, b);
+}
+const constants = range('const NAMES=', 'const ICONS=');
+const api = vm.runInNewContext(constants + "const today=()=> '2026-11-03';" + range('function blank()', 'function validDraft(') + range('function calc(d)', 'function saveDraft(') + '({blank,calc})');
+const d = api.blank();
+d.bottles = 600; d.ml = 720; d.liquid = 200;
+[20,5,3,4,2,1,60,1,600,1200,600,1800,300].forEach((v,i)=>d.lines[i].amount=v);
+let r = api.calc(d);
+assert.equal(r.valid, true);
+assert.equal(r.nominal, 144);
+assert.equal(r.unit, 197.5);
+assert.equal(r.total, 118500);
+assert.equal(r.rows.length, 13);
+assert.equal(r.rows[6].perBottle, 10);
+assert.equal(r.rows[12].perBottle, .5);
+d.withLoss=true; d.liters=440;
+r=api.calc(d); assert.equal(r.valid,true); assert.ok(Math.abs(r.unit-200.16666666666666)<1e-9);
+d.liters=431; assert.equal(api.calc(d).valid,false);
+d.withLoss=false; d.lines[0].amount=-1; assert.equal(api.calc(d).valid,false);
+d.lines[0].amount=20; d.bottles=1.5; assert.equal(api.calc(d).valid,false);
+d.bottles=600; d.liquid=''; assert.equal(api.calc(d).valid,false);
+d.liquid=200; d.boxSize=0; assert.equal(api.calc(d).valid,false);
+d.boxSize=6; d.ml=700; assert.equal(api.calc(d).nominal,140);
+console.log('PASS: lot-cost calculations, box/pallet allocation, loss and invalid inputs');
