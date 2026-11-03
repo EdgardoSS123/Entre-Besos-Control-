@@ -41,16 +41,20 @@ jobs:
               print('PUBLIC HTTP 200 + HASH VERIFIED:',name)
           with open('/tmp/eb-browser-inventory.py','wb') as f:
               f.write(read(src+'tests/browser-inventory.py'))
+          with open('/tmp/eb-browser-dispatch.py','wb') as f:
+              f.write(read(src+'tests/browser-dispatch.py'))
           PY
       - name: Install pinned browser test driver
         run: |
           python3 -m pip install playwright==1.56.0
           if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
-      - name: Test published top summary, inventory and transfers
+      - name: Test published top summary, inventory and recipient dispatch
         env:
           EB_TEST_URL: https://entre-besos-web-production.up.railway.app/
           EB_SCREENSHOTS: /tmp/eb-public-screens
-        run: python3 /tmp/eb-browser-inventory.py
+        run: |
+          python3 /tmp/eb-browser-inventory.py
+          python3 /tmp/eb-browser-dispatch.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
