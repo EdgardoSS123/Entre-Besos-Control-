@@ -1,0 +1,38 @@
+name: Test lot locations before publication
+on:
+  push:
+    branches: [work/eb-locations-33]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and independent unit tests
+        run: |
+          node --check control.js
+          node --check lot-operations.js
+          node tests/costing.cjs
+          node tests/inventory.cjs
+      - name: Prepare browser driver
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated local app
+        run: |
+          python3 tests/serve.py >/tmp/eb-local-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+      - name: Test UI, calculations, opening inventory and shipments
+        env:
+          EB_TEST_URL: http://127.0.0.1:8765/
+          EB_SCREENSHOTS: /tmp/eb-screens
+        run: python3 tests/browser-inventory.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lot-operations-test-screens
+          path: /tmp/eb-screens
+          retention-days: 2

@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [control.html, control.css, control.js, production.css, Dockerfile, 'tests/**', '.github/workflows/verify-published.yml']
+    paths: [control.html, control.css, control.js, production.css, lot-operations.css, lot-operations.js, inventory-core.js, Dockerfile, 'tests/**', '.github/workflows/verify-published.yml']
 permissions:
   contents: read
 concurrency:
@@ -25,25 +25,35 @@ jobs:
               r=urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'EntreBesosDeploymentCheck'}),timeout=20)
               assert r.status==200
               return r.read()
-          expected=read(src+'control.js')
-          for attempt in range(40):
+          paths=[('index.html','control.html'),('control.css','control.css'),('production.css','production.css'),('control.js','control.js'),('inventory-core.js','inventory-core.js'),('lot-operations.js','lot-operations.js'),('lot-operations.css','lot-operations.css'),('legacy.html','index.html'),('EB logo.jpg','EB logo.jpg'),('EB espadin.jpg','EB espadin.jpg'),('EB Cup.jpg','EB Cup.jpg'),('EB DB.jpg','EB DB.jpg')]
+          expected={name:read(src+urllib.parse.quote(original)) for name,original in paths}
+          for attempt in range(45):
               try:
-                  if read(root+'control.js?check='+os.environ['GITHUB_SHA'])==expected:
-                      break
+                  for name,_ in paths:
+                      got=read(root+urllib.parse.quote(name)+'?check='+os.environ['GITHUB_SHA'])
+                      assert hashlib.sha256(got).digest()==hashlib.sha256(expected[name]).digest(),name
+                  break
               except Exception:
-                  pass
-              time.sleep(5)
+                  time.sleep(5)
           else:
-              raise AssertionError('New JavaScript has not reached the public domain')
-          for path, original in [('index.html','control.html'),('control.css','control.css'),('production.css','production.css'),('control.js','control.js'),('legacy.html','index.html'),('EB logo.jpg','EB logo.jpg'),('EB espadin.jpg','EB espadin.jpg'),('EB Cup.jpg','EB Cup.jpg'),('EB DB.jpg','EB DB.jpg')]:
-              got=read(root+urllib.parse.quote(path)+'?check='+os.environ['GITHUB_SHA'])
-              wanted=read(src+urllib.parse.quote(original))
-              assert hashlib.sha256(got).digest()==hashlib.sha256(wanted).digest(),path
-              print('PUBLIC HTTP 200 + ORIGINAL HASH VERIFIED:',path)
-          with open('/tmp/eb-browser-liters.py','wb') as f:
-              f.write(read(src+'tests/browser-liters.py'))
+              raise AssertionError('The exact tested files have not reached the public domain')
+          for name,_ in paths:
+              print('PUBLIC HTTP 200 + HASH VERIFIED:',name)
+          with open('/tmp/eb-browser-inventory.py','wb') as f:
+              f.write(read(src+'tests/browser-inventory.py'))
           PY
       - name: Install pinned browser test driver
-        run: python3 -m pip install playwright==1.56.0
-      - name: Test published liters, losses, materials and preserved records
-        run: python3 /tmp/eb-browser-liters.py
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Test published top summary, inventory and transfers
+        env:
+          EB_TEST_URL: https://entre-besos-web-production.up.railway.app/
+          EB_SCREENSHOTS: /tmp/eb-public-screens
+        run: python3 /tmp/eb-browser-inventory.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: published-lot-operations-screens
+          path: /tmp/eb-public-screens
+          retention-days: 2

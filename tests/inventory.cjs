@@ -1,0 +1,25 @@
+'use strict';
+const assert=require('node:assert/strict');
+const I=require('../inventory-core.js');
+const now='2026-11-03',stamp=now+'T18:00:00Z';
+let d={lots:[{id:'L1',p:0,bottles:680,ml:720,unitCost:200,totalCost:136000}],moves:[{lot:'L1',l:'Oaxaca',n:999}],contacts:[],costs:{},documents:[{keep:true}]};
+const original=JSON.stringify(d);
+assert.deepEqual(I.pack(480),{full:1,half:0,boxes:0,bottles:0,total:480,boxSize:6,palletSize:480});
+assert.equal(I.pack(720,true).half,1);assert.equal(I.pack(720).boxes,40);assert.equal(I.pack(686).bottles,2);
+assert.equal(I.quantity(1,'half'),240);assert.equal(I.quantity(80,'box'),480);
+assert.throws(()=>I.quantity(.5,'pallet'));assert.throws(()=>I.quantity(-1,'bottle'));
+const input={rows:[{location:'Oaxaca',tag:'Nacional',amount:1,unit:'pallet'},{location:'CDMX',tag:'Exportación',amount:20,unit:'box'}],asOf:now,complete:true,notes:'Initial, history unknown',stamp};
+d=I.saveOpening(d,'L1',input,now);assert.equal(I.balance(d,'L1').total,600);assert.equal(d.moves[0].n,999);assert.deepEqual(d.documents,[{keep:true}]);assert.equal(d.lots[0].unitCost,200);assert.equal(JSON.parse(original).inventoryOpenings,undefined);
+const corrected=I.saveOpening(d,'L1',{...input,complete:false},now);assert.equal(corrected.inventoryOpeningRevisions.length,1);assert.equal(I.balance(corrected,'L1').complete,false);
+assert.throws(()=>I.saveOpening(d,'L1',{...input,rows:[{location:'Oaxaca',tag:'Nacional',amount:681,unit:'bottle'}]},now));
+const request={id:'ship1',from:'Oaxaca',to:'CDMX',tag:'Nacional',amount:10,unit:'box',date:now,received:false,costKnown:true,costAmount:1500,currency:'MXN',included:false,stamp};
+d=I.saveShipment(d,'L1',request,now);assert.equal(I.balance(d,'L1').transit,60);assert.equal(I.balance(d,'L1').total,540);assert.equal(I.balance(d,'L1').knownTotal,600);assert.equal(I.costTotals(d,'L1').byCurrency.MXN,1500);assert.equal(d.lots[0].unitCost,200);
+assert.throws(()=>I.saveShipment(d,'L1',{...request,id:'too-many',amount:421,unit:'bottle'},now));assert.throws(()=>I.saveShipment(d,'L1',request,now));assert.throws(()=>I.saveShipment(d,'L1',{...request,id:'same',to:'Oaxaca'},now));assert.throws(()=>I.saveOpening(d,'L1',input,now));
+d=I.receive(d,'L1','ship1',now,now,stamp);assert.equal(I.balance(d,'L1').transit,0);assert.equal(I.balance(d,'L1').total,600);assert.equal(I.balance(d,'L1').rows.find(r=>r.location==='CDMX'&&r.tag==='Nacional').quantity,60);assert.throws(()=>I.receive(d,'L1','ship1',now,now,stamp));
+d=I.saveShipment(d,'L1',{...request,id:'historical',historical:true,date:'',amount:'',costAmount:200,currency:'USD',included:true},now);assert.equal(I.balance(d,'L1').knownTotal,600);assert.equal(I.costTotals(d,'L1').included.USD,200);assert.equal(I.costTotals(d,'L1').byCurrency.USD,undefined);
+d=I.saveShipment(d,'L1',{...request,id:'no-price',historical:true,date:'',costKnown:false},now);assert.equal(I.costTotals(d,'L1').unknown,1);
+const mixed=I.saveOpening({...d,inventoryOpenings:[],lotShipments:[]},'L1',{...input,rows:[{location:'Oaxaca',tag:'Nacional',amount:1,unit:'pallet'},{location:'Oaxaca',tag:'Nacional',amount:2,unit:'box'}]},now);assert.equal(I.balance(mixed,'L1').total,492);assert.equal(mixed.inventoryOpenings[0].inputRows.length,2);
+assert.throws(()=>I.saveOpening(d,'L1',{...input,asOf:'2026-02-31'},now));
+const withWarehouse=I.addLocation(d,'USA · Georgia');assert.ok(I.locations(withWarehouse).includes('USA · Georgia'));assert.throws(()=>I.addLocation(withWarehouse,'usa · georgia'));
+for(let n=0;n<1600;n++)for(const half of [true,false]){const p=I.pack(n,half);assert.equal(p.full*480+p.half*240+p.boxes*6+p.bottles,n);assert.ok(p.bottles<6);}
+console.log('PASS: standard pallets, partial cases, cutover without double counting, location/label balances, transit, receipt, currencies, history and preservation.');
