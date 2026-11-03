@@ -12,7 +12,7 @@ with sync_playwright() as p:
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
   page.goto(BASE+'?check=bodegas33',wait_until='networkidle')
   page.locator('#lot-id').wait_for()
-  assert page.evaluate('EBCosts.version')=='eb-costos-3.3'
+  assert page.evaluate('EBCosts.version')=='eb-costos-3.4'
   assert page.locator('aside.summary').count()==0
   assert page.locator('#pin-summary').count()==0
   assert page.locator('#palletSize').get_attribute('type')=='hidden'

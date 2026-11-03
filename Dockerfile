@@ -3,8 +3,8 @@ WORKDIR /verify
 COPY control.js ./control.js
 COPY tests/costing.cjs ./tests/costing.cjs
 COPY inventory-core.js lot-operations.js ./
-COPY tests/inventory.cjs ./tests/inventory.cjs
-RUN node --check control.js && node --check inventory-core.js && node --check lot-operations.js && node tests/costing.cjs && node tests/inventory.cjs
+COPY tests/inventory.cjs tests/dispatch.cjs ./tests/
+RUN node --check control.js && node --check inventory-core.js && node --check lot-operations.js && node tests/costing.cjs && node tests/inventory.cjs && node tests/dispatch.cjs
 
 FROM nginx:alpine
 # Preserve previous modules and data keys. Publish the tested lot workspace.
