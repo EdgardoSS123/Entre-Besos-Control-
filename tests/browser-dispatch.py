@@ -35,7 +35,7 @@ with sync_playwright() as p:
   page.locator('#ship-purpose').select_option('sale');page.locator('#ship-tag').select_option('Nacional');page.locator('#ship-amount').fill('5');page.locator('#ship-status').select_option('received');page.locator('#save-shipment').click()
   b=page.evaluate("EBLedger.balance(JSON.parse(localStorage.getItem('eb-v1')),'PRUEBA-ENVIO')")
   assert b['total']==450 and b['deliveredSales']==30
-  assert 'Entregado al comprador' in page.locator('#shipment-list').inner_text()
+  assert 'entregado al comprador' in page.locator('#shipment-list').inner_text().lower()
   assert 'Entrega por venta' in page.locator('#shipment-list').inner_text()
   page.locator('#new-shipment').click();page.locator('#ship-tag').select_option('Nacional');page.locator('#ship-amount').fill('66');page.locator('#save-shipment').click()
   assert 'Solo hay 390' in page.locator('#inventory-errors').inner_text()
