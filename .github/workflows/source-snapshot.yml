@@ -2,7 +2,7 @@ name: Source snapshot for isolated development
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'work/dispatch-destinations-34']
     paths: ['.github/workflows/source-snapshot.yml']
 permissions:
   contents: read
