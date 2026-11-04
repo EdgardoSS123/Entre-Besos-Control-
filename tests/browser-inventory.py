@@ -62,10 +62,17 @@ with sync_playwright() as p:
   page.reload();page.locator('#lot-id').wait_for()
   assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).inventoryOpenings.length")==1
   assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots[0].unitCost")==initial_cost
-  page.locator('#producedLiters').fill('1000');page.locator(save).click();assert 'inventario inicial' in page.locator('#form-errors').inner_text()
-  assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots[0].bottles")==680
+  previous=page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")
+  page.locator('#producedLiters').fill('1000');page.locator(save).click()
+  after=page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")
+  assert after['lots'][0]['bottles']==1375
+  assert after['lots'][0]['producedLiters']==1000
+  assert after['inventoryOpenings']==previous['inventoryOpenings']
+  assert after['lotShipments']==previous['lotShipments']
+  assert page.evaluate("EBLedger.balance(JSON.parse(localStorage.getItem('eb-v1')),'TEST-LOT-01').total")==600
+  assert after['lotRevisions'][-1]['record']['bottles']==680
   assert not errors,errors
-  print('PASS BROWSER',width,': top summary, 80x6, halves, initial balance, labels, transit, receiving, historical costs, report, reload, preservation, no overflow')
+  print('PASS BROWSER',width,': top summary, 80x6, halves, initial balance, labels, transit, receiving, historical costs, report, editable production with unchanged stock, reload, preservation, no overflow')
   ctx.close()
  ctx=browser.new_context();page=ctx.new_page()
  old={'lots':[{'id':'OLD','p':0,'date':'2026-11-01','ml':720,'bottles':600,'liters':432,'liquid':200,'boxSize':6,'palletSize':600,'costingVersion':3,'unitCost':197.5,'totalCost':118500}], 'moves':[], 'contacts':[], 'costs':{},'documents':[{'keep':'unchanged'}]}
