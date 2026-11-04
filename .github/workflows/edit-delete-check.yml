@@ -1,0 +1,19 @@
+name: Verify editable lot records
+on:
+  push:
+    branches: [work/edit-delete-lots]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive source for isolated editing
+        run: git archive --format=zip HEAD -o /tmp/eb-editable-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editable-source
+          path: /tmp/eb-editable-source.zip
+          retention-days: 1
