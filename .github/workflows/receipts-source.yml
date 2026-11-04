@@ -1,0 +1,19 @@
+name: Receipts development source
+on:
+  push:
+    branches: [work/receipts-35]
+    paths: ['.github/workflows/receipts-source.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/entre-besos-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eb-receipts-source
+          path: /tmp/entre-besos-source.zip
+          retention-days: 1
