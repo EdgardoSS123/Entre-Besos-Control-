@@ -1,8 +1,14 @@
 'use strict';
 /* Opening balances are a cut-over, never a fabricated history. */
 (function(root){
-  const VERSION='3.4',BOX=6,PALLET=480,HALF=240;
+  const VERSION='3.4.1-minibodegas',BOX=6,PALLET=480,HALF=240;
   const LOCATIONS=['Oaxaca','CDMX','USA','Singapur'];
+  // Catalog only: no automatic opening balance, movement, sale or user account.
+  const PARTNER_DEPOTS=Object.freeze([
+    Object.freeze({name:'EB1-1 · Edgardo',code:'EB1-1',custodian:'Edgardo',parent:'CDMX'}),
+    Object.freeze({name:'EB1-2 · Ricardo',code:'EB1-2',custodian:'Ricardo',parent:'CDMX'}),
+    Object.freeze({name:'EB1-3 · Mario',code:'EB1-3',custodian:'Mario',parent:'CDMX'})
+  ]);
   const LABELS=['Nacional','Exportación','Sin etiquetar','Por clasificar'];
   const CURRENCIES=['MXN','USD','SGD'];
   const KINDS={warehouse:'Bodega',distributor:'Distribuidor',client:'Cliente'};
@@ -24,10 +30,11 @@
   }
   function lotById(d,id){const lot=(d.lots||[]).find(l=>l.id===id);if(!lot)fail('No se encontró el lote. Guarda sus costos primero.');return lot;}
   function opening(d,id){return(d.inventoryOpenings||[]).find(x=>x.lotId===id)||null;}
-  function locations(d){return [...new Set([...LOCATIONS,...(d.warehouses||[]).map(x=>x.name)])];}
+  function locations(d){return [...new Set([...LOCATIONS,...PARTNER_DEPOTS.map(x=>x.name),...(d.warehouses||[]).map(x=>x.name)])];}
   function locationInfo(d,name){
     const record=(d.warehouses||[]).find(x=>x.name===name);
-    return{name,kind:record?.kind||'warehouse',address:record?.address||'',contact:record?.contact||''};
+    const depot=PARTNER_DEPOTS.find(x=>x.name===name);
+    return{name,kind:record?.kind||'warehouse',address:record?.address||'',contact:record?.contact||'',...(depot?{parent:depot.parent,code:depot.code,custodian:depot.custodian,isPartnerDepot:true}:{})};
   }
   // Physical dispatch, delivery and ownership are separate. A sale is removed
   // from owned stock on confirmed delivery, not counted in the customer's depot.
@@ -123,6 +130,6 @@
     next.warehouses.push({name,kind,address:String(details.address||'').trim().slice(0,400),contact:String(details.contact||'').trim().slice(0,160)});
     return next;
   }
-  const api={VERSION,BOX,PALLET,HALF,LOCATIONS,LABELS,CURRENCIES,KINDS,PURPOSES,locationInfo,purposeOf,pack,quantity,opening,locations,shipments,balance,costTotals,saveOpening,saveShipment,receive,addLocation};
+  const api={VERSION,BOX,PALLET,HALF,LOCATIONS,PARTNER_DEPOTS,LABELS,CURRENCIES,KINDS,PURPOSES,locationInfo,purposeOf,pack,quantity,opening,locations,shipments,balance,costTotals,saveOpening,saveShipment,receive,addLocation};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.EBLedger=api;
 })(typeof window==='undefined'?globalThis:window);
