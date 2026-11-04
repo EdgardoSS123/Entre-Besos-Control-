@@ -31,23 +31,23 @@ with sync_playwright() as p:
   page.locator('#simple-source').select_option(pair('Singapur'));expect(page.locator('#simple-move-samples')).to_be_checked()
   page.locator('#simple-destination').select_option('USA');page.locator('#simple-amount').fill('1');page.locator('#simple-save').click();expect(page.locator('#simple-current')).to_have_text('714')
   assert page.evaluate('EBLedger.available(JSON.parse(localStorage.getItem("eb-v1")),"SAMPLE-UI","USA","Por clasificar","sample")')==6
-  # Sale form always offers free delivery: no price required, no sale or invoice created.
-  page.locator('#simple-sale-tab').click();expect(page.locator('#simple-sale-sample')).to_be_visible();page.locator('#simple-sale-sample').check()
-  expect(page.locator('#simple-price')).to_be_hidden();page.locator('#simple-source').select_option(pair('USA'));page.locator('#simple-amount').fill('1')
-  expect(page.locator('#simple-save')).to_have_text('Guardar muestra y descontar');page.locator('#simple-save').click()
-  expect(page.locator('#simple-current')).to_have_text('708');expect(page.locator('#simple-samples-used')).to_have_text('6');expect(page.locator('#simple-sold')).to_have_text('0');expect(page.locator('#simple-produced')).to_have_text('714')
+  # Reserved stock can be sold; free deliveries use the sample tab.
+  page.locator('#simple-sale-tab').click();assert page.locator('#simple-sale-sample').count()==0
+  page.locator('#simple-source').select_option(pair('USA'));page.locator('#simple-amount').fill('1')
+  page.locator('#simple-price').fill('600');page.locator('#simple-save').click()
+  expect(page.locator('#simple-current')).to_have_text('708');expect(page.locator('#simple-samples-used')).to_have_text('0');expect(page.locator('#simple-sold')).to_have_text('6')
   # Dedicated sample tab remains one-step, with quantity and optional recipient.
   page.locator('#simple-sample-tab').click();page.locator('#simple-source').select_option(pair('Singapur'));page.locator('#simple-amount').fill('2');page.locator('#simple-save').click()
-  expect(page.locator('#simple-current')).to_have_text('706');expect(page.locator('#simple-samples-used')).to_have_text('8');expect(page.locator('#simple-difference')).to_have_text('0')
+  expect(page.locator('#simple-current')).to_have_text('706');expect(page.locator('#simple-samples-used')).to_have_text('2');expect(page.locator('#simple-difference')).to_have_text('0')
   # Counts can classify existing quantities; they don't count as consumed/given.
   page.locator('#simple-count-tab').click();page.locator('#simple-location').select_option('CDMX');page.locator('#simple-all-samples').check();page.locator('#simple-save').click()
-  expect(page.locator('#simple-current')).to_have_text('706');expect(page.locator('#simple-samples-used')).to_have_text('8')
+  expect(page.locator('#simple-current')).to_have_text('706');expect(page.locator('#simple-samples-used')).to_have_text('2')
   assert page.evaluate('EBLedger.balance(JSON.parse(localStorage.getItem("eb-v1")),"SAMPLE-UI").commercialTotal')==0
   page.screenshot(path=str(OUT/f'sample-balance-{width}.png'),full_page=True)
   before=page.evaluate('localStorage.getItem("eb-v1")');page.reload(wait_until='networkidle');expect(page.locator('h1')).to_have_text('Mis lotes');assert page.evaluate('localStorage.getItem("eb-v1")')==before
   page.locator('[data-simple-open="SAMPLE-UI"]').click();expect(page.locator('#simple-current')).to_have_text('706')
   assert '117 corrugados + 4 bot. sueltas' in page.locator('#simple-current').locator('..').inner_text()
-  assert '1 corrugados + 2 bot. sueltas' in page.locator('#simple-samples-used').locator('..').inner_text()
+  assert '2 bot. sueltas' in page.locator('#simple-samples-used').locator('..').inner_text()
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),width
   assert not errors,errors
   print('PASS ALWAYS SAMPLES BROWSER',width,': visible in counts/moves/sales, Singapore dispatch without presplit, reserved forward transfer, free delivery without price, conserved production, cases/remainders, no false revenue, reload/no overflow.')
