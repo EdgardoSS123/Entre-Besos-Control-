@@ -1,0 +1,84 @@
+name: Verify partner mini warehouses
+on:
+  push:
+    branches: [work/partner-depots, main]
+    paths: [inventory-core.js, lot-operations.js, commerce-ui.js, lot-operations.css, control.html, 'tests/partner-depots.cjs', 'tests/browser-partner-depots.py', '.maintenance/add-partner-depots.py', '.github/workflows/partner-depots.yml']
+permissions:
+  contents: write
+concurrency:
+  group: partner-depots-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed changes only in development
+        if: github.ref_name == 'work/partner-depots'
+        run: python3 .maintenance/add-partner-depots.py
+      - name: Verify calculations and stock conservation
+        run: |
+          node --check inventory-core.js
+          node --check lot-operations.js
+          node --check commerce-ui.js
+          node tests/costing.cjs
+          node tests/inventory.cjs
+          node tests/dispatch.cjs
+          node tests/commerce.cjs
+          node tests/partner-depots.cjs
+      - name: Prepare browser tests
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Use isolated development server
+        if: github.ref_name == 'work/partner-depots'
+        run: |
+          python3 tests/serve.py >/tmp/eb-minis.log 2>&1 &
+          for i in $(seq 1 15); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact deployed files before public tests
+        if: github.ref_name == 'main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,hashlib,time
+          from pathlib import Path
+          root='https://entre-besos-web-production.up.railway.app/'
+          files={'index.html':'control.html','inventory-core.js':'inventory-core.js','lot-operations.js':'lot-operations.js','commerce-ui.js':'commerce-ui.js','lot-operations.css':'lot-operations.css'}
+          for attempt in range(45):
+              try:
+                  for remote,local in files.items():
+                      req=urllib.request.Request(root+remote+'?verify=minibodegas',headers={'User-Agent':'EBPartnerDepotTests'})
+                      actual=urllib.request.urlopen(req,timeout=20).read()
+                      assert hashlib.sha256(actual).digest()==hashlib.sha256(Path(local).read_bytes()).digest(),remote
+                  break
+              except Exception:
+                  time.sleep(4)
+          else:
+              raise AssertionError('Published app does not match the tested commit')
+          print('Exact public source hashes verified')
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test partner movements and sales on desktop and mobile
+        env:
+          EB_SCREENSHOTS: /tmp/eb-partner-screens
+        run: |
+          python3 tests/browser-partner-depots.py
+          python3 tests/browser-commerce.py
+      - name: Commit tested application files only
+        if: github.ref_name == 'work/partner-depots'
+        run: |
+          git fetch origin work/partner-depots
+          test "$(git rev-parse origin/work/partner-depots)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add inventory-core.js lot-operations.js commerce-ui.js lot-operations.css control.html
+          git rm .maintenance/add-partner-depots.py
+          git commit -m 'Add tested CDMX partner mini warehouses, internal stock transfers and location-specific sales'
+          git push origin HEAD:work/partner-depots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: partner-depot-checks
+          path: /tmp/eb-partner-screens
+          retention-days: 2
