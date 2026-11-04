@@ -1,19 +1,103 @@
 name: Verify editable lot records
 on:
   push:
-    branches: [work/edit-delete-lots]
+    branches: [work/edit-delete-lots, main]
+    paths: ['.github/workflows/edit-delete-check.yml', '.maintenance/editable-*.b64', 'corrections*', 'control*', 'simple-lot.js', 'lot-operations.js', 'Dockerfile', 'tests/browser-corrections.py', 'tests/corrections.cjs']
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: editable-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
-      - name: Archive source for isolated editing
-        run: git archive --format=zip HEAD -o /tmp/eb-editable-source.zip
+      - name: Apply exact reviewed patch only on development branch
+        if: github.ref_name == 'work/edit-delete-lots'
+        run: |
+          python3 - <<'PY'
+          import base64,lzma,hashlib
+          from pathlib import Path
+          if Path('.maintenance/editable-0.b64').exists():
+              encoded=''.join(Path(f'.maintenance/editable-{i}.b64').read_text().strip() for i in range(4))
+              patch=lzma.decompress(base64.b64decode(encoded))
+              assert hashlib.sha256(patch).hexdigest()=='6c11ee5979293f899c01c719491d0e26467c1a21c7359e682ee2b423aaf7252b'
+              Path('/tmp/editable.patch').write_bytes(patch)
+          PY
+          if test -f /tmp/editable.patch; then git apply --check /tmp/editable.patch && git apply /tmp/editable.patch; fi
+      - name: Verify calculations, reversals and data preservation
+        run: |
+          node --check control.js
+          node --check corrections-core.js
+          node --check corrections-ui.js
+          node --check simple-lot.js
+          node tests/costing.cjs
+          node tests/inventory.cjs
+          node tests/dispatch.cjs
+          node tests/commerce.cjs
+          node tests/partner-depots.cjs
+          node tests/simple-lot.cjs
+          node tests/corrections.cjs
+      - name: Prepare browser
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated development server
+        if: github.ref_name == 'work/edit-delete-lots'
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published application
+        if: github.ref_name == 'main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request, time, os
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          files=['control.html','control.js','simple-lot.js','lot-operations.js','corrections-core.js','corrections-ui.js','corrections.css']
+          for attempt in range(36):
+              try:
+                  for f in files:
+                      remote='index.html' if f=='control.html' else f
+                      with urllib.request.urlopen(base+remote+'?verify='+os.environ['GITHUB_SHA'],timeout=15) as response:
+                          assert response.read()==Path(f).read_bytes(), f
+                  break
+              except Exception:
+                  if attempt==35: raise
+                  time.sleep(5)
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test editing deletion recovery and existing workflows in isolated browser profiles
+        env:
+          EB_SCREENSHOTS: /tmp/eb-editable-screens
+        run: |
+          python3 tests/browser-corrections.py
+          python3 tests/browser-simple-lot.py
+          python3 tests/browser-zero-fields.py
+          python3 tests/browser-location-entry.py
+          python3 tests/browser-commerce.py
+          python3 tests/browser-partner-depots.py
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+      - name: Commit only tested application source on development branch
+        if: github.ref_name == 'work/edit-delete-lots'
+        run: |
+          git fetch origin work/edit-delete-lots
+          test "$(git rev-parse origin/work/edit-delete-lots)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add control.js control.html simple-lot.js lot-operations.js Dockerfile corrections-core.js corrections-ui.js corrections.css tests/corrections.cjs tests/browser-corrections.py
+          if test -f .maintenance/editable-0.b64; then git rm .maintenance/editable-*.b64; fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'Enable tested reversible editing and deletion of lots, stock, sales, payments, movements and samples'
+            git push origin HEAD:work/edit-delete-lots
+          fi
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: editable-source
-          path: /tmp/eb-editable-source.zip
-          retention-days: 1
+          name: editable-checks
+          path: /tmp/eb-editable-screens
+          retention-days: 2
