@@ -43,6 +43,8 @@ jobs:
               f.write(read(src+'tests/browser-inventory.py'))
           with open('/tmp/eb-browser-dispatch.py','wb') as f:
               f.write(read(src+'tests/browser-dispatch.py'))
+          with open('/tmp/eb-browser-zero-fields.py','wb') as f:
+              f.write(read(src+'tests/browser-zero-fields.py'))
           PY
       - name: Install pinned browser test driver
         run: |
@@ -55,6 +57,10 @@ jobs:
         run: |
           python3 /tmp/eb-browser-inventory.py
           python3 /tmp/eb-browser-dispatch.py
+      - name: Test direct zero-field editing on desktop and touch
+        env:
+          EB_TEST_URL: https://entre-besos-web-production.up.railway.app/
+        run: python3 /tmp/eb-browser-zero-fields.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -3,4 +3,39 @@
 <aside class="sidebar"><div class="brand"><img src="./EB%20logo.jpg" alt="Entre Besos · Mezcal artesanal"></div><div class="label">CONTROL INTERNO</div><nav class="side-nav"><button id="nav-editor" class="active" data-view="editor"></button><button id="nav-lots" data-view="lots"></button><button id="backup-nav"></button></nav><div class="sidebar-footer"><strong>Un lote, un costo.</strong>Los cambios en un lote no modifican los demás.<a href="./legacy.html">Otros módulos · versión anterior ↗</a><div style="margin-top:15px;font-size:10px">SAGAV CUATRO<br>Control v3.4 · Lotes y bodegas</div></div></aside>
 <div class="workspace"><header class="topbar"><div class="crumb">Entre Besos Control <span style="margin:0 9px;color:#b7bfcd">/</span><b>Productos y lotes</b></div><div class="mobile-brand"><img src="./EB%20logo.jpg" alt="Entre Besos"><b>CONTROL<br>INTERNO</b></div><div class="controls-row"><span class="chip"><i></i>Datos en este navegador</span><button class="secondary" id="backup-top"></button></div></header><main class="page" id="app"></main></div>
 <nav class="mobile-nav"><button id="mobile-editor" class="active" data-view="editor"></button><button id="mobile-lots" data-view="lots"></button><button id="backup-mobile"></button></nav><div class="mobile-save hidden" id="mobile-save"><div><small>Costo por botella · MXN</small><strong id="mobile-total">—</strong></div><button class="primary" id="mobile-save-button">Guardar lote</button></div><div id="toast" class="toast hidden" role="status"></div><section id="print-view" class="print-view"></section>
-<script src="./inventory-core.js?v=34" defer></script><script src="./control.js?v=32" defer></script><script src="./lot-operations.js?v=34" defer></script></body></html>
+<script src="./inventory-core.js?v=34" defer></script><script src="./control.js?v=32" defer></script><script src="./lot-operations.js?v=34" defer></script><script id="zero-on-edit">
+/* Clear an existing zero only while editing. Keep calculations and saved lots unchanged. */
+(function () {
+  'use strict';
+  const clearedZeros = new WeakSet();
+  function editable(input) {
+    return input instanceof HTMLInputElement &&
+      !input.readOnly && !input.disabled &&
+      input.matches('.cost-table input[type="number"], #lossLiters');
+  }
+  function restoreZero(input) {
+    if (!(input instanceof HTMLInputElement) || !clearedZeros.has(input)) return;
+    clearedZeros.delete(input);
+    // Do not replace incomplete or invalid numeric input with a silent zero.
+    if (input.value === '' && !input.validity.badInput) {
+      input.value = '0';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  document.addEventListener('focusin', function (event) {
+    const input = event.target;
+    if (!editable(input) || input.value === '' || input.valueAsNumber !== 0) return;
+    clearedZeros.add(input);
+    input.value = '';
+  });
+  document.addEventListener('focusout', function (event) {
+    restoreZero(event.target);
+  });
+  // Some touch browsers activate a button without blurring the current input.
+  document.addEventListener('click', function (event) {
+    if (event.target instanceof Element && event.target.closest('button, a, [role="button"]')) {
+      restoreZero(document.activeElement);
+    }
+  }, true);
+})();
+</script></body></html>
