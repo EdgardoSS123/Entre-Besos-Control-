@@ -7,7 +7,7 @@ const original=JSON.stringify(d);
 assert.deepEqual(I.pack(480),{full:1,half:0,boxes:0,bottles:0,total:480,boxSize:6,palletSize:480});
 assert.equal(I.pack(720,true).half,1);assert.equal(I.pack(720).boxes,40);assert.equal(I.pack(686).bottles,2);
 assert.equal(I.quantity(1,'half'),240);assert.equal(I.quantity(80,'box'),480);
-assert.throws(()=>I.quantity(.5,'pallet'));assert.throws(()=>I.quantity(-1,'bottle'));
+assert.equal(I.quantity(.5,'pallet'),240);assert.equal(I.quantity(2.5,'pallet'),1200);assert.throws(()=>I.quantity(-1,'bottle'));
 const input={rows:[{location:'Oaxaca',tag:'Nacional',amount:1,unit:'pallet'},{location:'CDMX',tag:'Exportación',amount:20,unit:'box'}],asOf:now,complete:true,notes:'Initial, history unknown',stamp};
 d=I.saveOpening(d,'L1',input,now);assert.equal(I.balance(d,'L1').total,600);assert.equal(d.moves[0].n,999);assert.deepEqual(d.documents,[{keep:true}]);assert.equal(d.lots[0].unitCost,200);assert.equal(JSON.parse(original).inventoryOpenings,undefined);
 const corrected=I.saveOpening(d,'L1',{...input,complete:false},now);assert.equal(corrected.inventoryOpeningRevisions.length,1);assert.equal(I.balance(corrected,'L1').complete,false);

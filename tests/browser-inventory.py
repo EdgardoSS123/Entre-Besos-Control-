@@ -10,7 +10,7 @@ with sync_playwright() as p:
  for width,height in [(1440,1000),(390,844),(375,812)]:
   ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(BASE+'?check=bodegas33',wait_until='networkidle')
+  page.goto(BASE+'?classic=1&'+'?check=bodegas33',wait_until='networkidle')
   page.locator('#lot-id').wait_for()
   assert page.evaluate('EBCosts.version')=='eb-costos-3.4'
   assert page.locator('aside.summary').count()==0
@@ -70,7 +70,7 @@ with sync_playwright() as p:
  ctx=browser.new_context();page=ctx.new_page()
  old={'lots':[{'id':'OLD','p':0,'date':'2026-11-01','ml':720,'bottles':600,'liters':432,'liquid':200,'boxSize':6,'palletSize':600,'costingVersion':3,'unitCost':197.5,'totalCost':118500}], 'moves':[], 'contacts':[], 'costs':{},'documents':[{'keep':'unchanged'}]}
  page.add_init_script('localStorage.setItem("eb-v1",'+json.dumps(json.dumps(old))+');')
- page.goto(BASE,wait_until='networkidle');page.locator('#show-lots').click();page.locator('[data-edit="OLD"]').click()
+ page.goto(BASE+'?classic=1',wait_until='networkidle');page.locator('#show-lots').click();page.locator('[data-edit="OLD"]').click()
  assert page.locator('#palletSize').input_value()=='600'
  assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")==old
  assert 'Empaque histórico conservado' in page.locator('.pack-rule').inner_text()

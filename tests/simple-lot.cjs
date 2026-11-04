@@ -1,0 +1,35 @@
+'use strict';
+const assert=require('node:assert/strict');
+const I=require('../simple-core.js')(require('../commerce-core.js')(require('../inventory-core.js')));
+const now='2026-11-04',id='SIMPLE',stamp=now+'T12:00:00Z';let nextId=0;
+const fresh=()=>({lots:[{id,bottles:1440,ml:720,unitCost:200}],moves:[],contacts:[{name:'NO TOCAR'}]});
+const args=(more)=>({id:'t'+(++nextId),stamp,...more});
+assert.equal(I.quantity('2.5','pallet'),1200);assert.equal(I.quantity('2,5','pallet'),1200);assert.equal(I.quantity('0.5','pallet'),240);assert.equal(I.quantity('0.5','box'),3);assert.throws(()=>I.quantity('0.5','bottle'));assert.throws(()=>I.quantity('0.001','pallet'));assert.throws(()=>I.quantity('Infinity','pallet'));assert.throws(()=>I.quantity(-1,'pallet'));
+let d=fresh();const original=structuredClone(d);
+d=I.countStock(d,id,args({location:'USA',tag:'Exportación',amount:3,unit:'pallet',samples:0}),now);assert.deepEqual(original,fresh());assert.equal(I.balance(d,id).total,1440);assert.equal(I.reconciliation(d,id).unexplained,0);
+d=I.sellStock(d,id,args({from:'USA',tag:'Exportación',amount:'0.5',unit:'pallet',price:'6000',priceBasis:'box',currency:'MXN',payment:'pending'}),now);
+assert.equal(I.balance(d,id).total,1200);assert.equal(I.reconciliation(d,id).sold,240);assert.equal(I.reconciliation(d,id).unexplained,0);
+assert.equal(d.lotSales[0].totalCents,24000000);
+d=I.moveStock(d,id,args({from:'USA',to:'CDMX',tag:'Exportación',amount:'0.5',unit:'pallet',cost:'',currency:'MXN'}),now);
+assert.equal(I.balance(d,id).total,1200);assert.equal(I.available(d,id,'USA','Exportación'),960);assert.equal(I.available(d,id,'CDMX','Exportación'),240);
+assert.throws(()=>I.moveStock(d,id,args({from:'USA',to:'CDMX',tag:'Exportación',amount:3,unit:'pallet',cost:''}),now));
+let h=fresh();h=I.countStock(h,id,args({location:'USA',tag:'Exportación',amount:'2.5',unit:'pallet',samples:0}),now);
+h=I.knownSale(h,id,args({amount:'0.5',unit:'pallet',price:'',currency:'USD',payment:'unknown'}),now);
+assert.equal(I.balance(h,id).total,1200);assert.equal(I.reconciliation(h,id).unexplained,0);assert.equal(I.saleStatus(h.lotSales[0],now).status,'Precio pendiente');assert.equal(h.lotSales[0].from,null);assert.equal(h.lotSales[0].date,null);
+const sBefore=JSON.stringify(h.lotSales);h=I.countStock(h,id,args({location:'USA',tag:'Exportación',amount:1000,unit:'bottle',samples:0,expected:[1200,0]}),now);assert.equal(I.balance(h,id).total,1000);assert.equal(I.reconciliation(h,id).unexplained,200);assert.equal(JSON.stringify(h.lotSales),sBefore);
+assert.throws(()=>I.countStock(h,id,args({location:'USA',tag:'Exportación',amount:900,unit:'bottle',samples:0,expected:[1200,0]}),now));
+h=I.countStock(h,id,args({location:'USA',tag:'Exportación',amount:1000,unit:'bottle',samples:0,expected:[1000,0]}),now);assert.equal(I.balance(h,id).total,1000);
+let sm=fresh();sm=I.countStock(sm,id,args({location:'Singapur',tag:'Exportación',amount:12,unit:'bottle',allSamples:true}),now);assert.equal(I.balance(sm,id).sampleTotal,12);assert.equal(I.balance(sm,id).commercialTotal,0);
+sm=I.sampleAction(sm,id,args({type:'consume',location:'Singapur',tag:'Exportación',amount:2,unit:'bottle',date:now,notes:'Muestra entregada'}),now);assert.equal(I.balance(sm,id).total,10);
+sm=I.countStock(sm,id,args({location:'Singapur',tag:'Exportación',amount:9,unit:'bottle',allSamples:true,expected:[10,10]}),now);assert.equal(I.balance(sm,id).total,9);assert.equal(I.balance(sm,id).sampleTotal,9);assert.equal(I.reconciliation(sm,id).used,2);
+sm=I.moveStock(sm,id,args({from:'Singapur',to:'USA',tag:'Exportación',amount:3,unit:'bottle',stockType:'sample',cost:''}),now);assert.equal(I.balance(sm,id).sampleTotal,9);assert.equal(I.balance(sm,id).total,9);
+assert.deepEqual(d.contacts,[{name:'NO TOCAR'}]);assert.deepEqual(d.lots,original.lots);
+// Reconcile linked shipment sale only once, and include in-transit stock.
+let sh=fresh();sh=I.countStock(sh,id,args({location:'Oaxaca',tag:'Nacional',amount:1440,unit:'bottle',samples:0}),now);sh=I.addLocation(sh,'Cliente Test',{kind:'client'});
+const ship=args({from:'Oaxaca',to:'Cliente Test',tag:'Nacional',amount:10,unit:'box',date:now,purpose:'sale',received:false,costKnown:false});sh=I.saveShipment(sh,id,ship,now);
+assert.equal(I.reconciliation(sh,id).unexplained,0);assert.equal(I.reconciliation(sh,id).sold,0);
+sh=I.receive(sh,id,ship.id,now,now,stamp);assert.equal(I.reconciliation(sh,id).sold,60);assert.equal(I.reconciliation(sh,id).unexplained,0);
+sh=I.saveSale(sh,id,args({mode:'shipment',shipmentId:ship.id,date:now,price:'100',priceBasis:'bottle',currency:'MXN',paidAmount:0}),now);assert.equal(I.reconciliation(sh,id).sold,60);assert.equal(I.reconciliation(sh,id).unexplained,0);
+// Known prior sale with a price but unknown collection is not called paid.
+let p=fresh();p=I.countStock(p,id,args({location:'Oaxaca',tag:'Nacional',amount:10,unit:'box',samples:0}),now);p=I.knownSale(p,id,args({amount:2,unit:'box',price:6600,priceBasis:'box',currency:'MXN',payment:'unknown'}),now);assert.equal(I.saleStatus(p.lotSales[0],now).status,'Pago no informado');assert.equal(I.saleStatus(p.lotSales[0],now).pendingCents,null);
+console.log('PASS SIMPLE: 3 - 0.5 = 2.5 pallets, historical sales no duplicate deduction, exact decimal units, counts replace, stock transfers conserve, samples, reconciliation, unknown details, preserved legacy data, conflict checks.');

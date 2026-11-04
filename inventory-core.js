@@ -24,9 +24,12 @@
     return{full,half,boxes:Math.floor(rest/BOX),bottles:rest%BOX,total:n,boxSize:BOX,palletSize:PALLET};
   }
   function quantity(v,unit,allowZero=false){
-    const factors={bottle:1,box:BOX,pallet:PALLET,half:HALF};
-    if(v===''||v===null||v===undefined||!Object.hasOwn(factors,unit)||(!positiveInt(v)&&!(allowZero&&Number(v)===0)))fail('Captura una cantidad entera válida y su unidad.');
-    const n=Number(v)*factors[unit];if(!Number.isSafeInteger(n))fail('Cantidad fuera de rango.');return n;
+    const factor={bottle:1,box:BOX,pallet:PALLET,half:HALF}[unit];
+    const text=String(v??'').trim().replace(',','.');
+    if(!factor||!/^\d+(?:\.\d{1,6})?$/.test(text)||text.length>24)fail('Captura una cantidad válida, por ejemplo 2.5 pallets.');
+    const parts=text.split('.'),scale=10n**BigInt((parts[1]||'').length),num=BigInt(parts.join(''))*BigInt(factor);
+    if(num%scale!==0n)fail('La cantidad debe equivaler a botellas completas.');
+    const n=Number(num/scale);if(!Number.isSafeInteger(n)||n<0||(!allowZero&&n===0))fail('Captura una cantidad mayor que cero.');return n;
   }
   function lotById(d,id){const lot=(d.lots||[]).find(l=>l.id===id);if(!lot)fail('No se encontró el lote. Guarda sus costos primero.');return lot;}
   function opening(d,id){return(d.inventoryOpenings||[]).find(x=>x.lotId===id)||null;}
@@ -53,6 +56,7 @@
         else add(s.to,s.tag,s.quantity);
       }else transit+=s.quantity;
     });
+    for(const a of (d.lotStockAdjustments||[]).filter(x=>x.lotId===id&&x.status!=='cancelled'))add(a.location,a.tag,a.delta);
     const rows=[...map.values()];
     if(rows.some(r=>r.quantity<0))fail('El historial genera existencias negativas. No se modificó la información.');
     const atThirdParties=total(rows.filter(r=>locationInfo(d,r.location).kind!=='warehouse'));
@@ -66,6 +70,7 @@
   }
   function saveOpening(d,id,input,now){
     const lot=lotById(d,id),previous=opening(d,id);
+    if((d.lotStockAdjustments||[]).some(x=>x.lotId===id&&x.status!=='cancelled'))fail('Actualiza las existencias desde el resumen simple del lote. El historial se conserva.');
     if(!Number.isSafeInteger(Number(lot.bottles))||Number(lot.bottles)<0)fail('Completa la producción de este lote antes de capturar existencias.');
     if(!dateOK(input.asOf)||input.asOf>now)fail('La fecha del inventario debe ser válida y no estar en el futuro.');
     if(shipments(d,id).some(s=>!s.historical&&s.status!=='cancelled'))fail('Ya hay envíos desde este corte. No reemplaces el inventario inicial.');

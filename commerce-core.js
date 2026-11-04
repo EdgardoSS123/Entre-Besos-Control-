@@ -29,6 +29,7 @@
     const b=base.balance(d,id),map=new Map(b.rows.map(r=>[key(r.location,r.tag),{...r,sampleQuantity:0}]));
     const row=(where,tag)=>{const k=key(where,tag);if(!map.has(k))map.set(k,{location:where,tag,quantity:0,sampleQuantity:0});return map.get(k);};
     if(b.opening)for(const r of b.opening.rows)row(r.location,r.tag).sampleQuantity+=Number(r.sampleQuantity||0);
+    for(const a of (d.lotStockAdjustments||[]).filter(x=>x.lotId===id&&active(x)))row(a.location,a.tag).sampleQuantity+=a.sampleDelta;
     let sampleTransit=0,samplesUsed=0,directSales=0;
     for(const s of base.shipments(d,id).filter(s=>!s.historical&&active(s))){
       if(s.stockType==='sample')row(s.from,s.tag).sampleQuantity-=s.quantity;
@@ -80,7 +81,7 @@
     balance(next,id);return next;
   }
   function quote(n,price,basis){if(!['bottle','box'].includes(basis))fail('El precio debe ser por botella o por caja de 6.');const value=cents(price,false),totalCents=Math.round(n*value/(basis==='box'?6:1));if(!Number.isSafeInteger(totalCents)||totalCents<=0)fail('Revisa el total de la venta.');return{priceCents:value,priceBasis:basis,totalCents};}
-  function status(s,now){const paidCents=(s.payments||[]).reduce((n,p)=>n+p.amountCents,0),pendingCents=s.totalCents-paidCents;return{paidCents,pendingCents,status:pendingCents===0?'Pagada':paidCents>0?'Pago parcial':'Pendiente',overdue:pendingCents>0&&!!s.dueDate&&s.dueDate<now};}
+  function status(s,now){if(s.priceKnown===false)return{paidCents:null,pendingCents:null,status:'Precio pendiente',overdue:false};if(s.paymentKnown===false)return{paidCents:null,pendingCents:null,status:'Pago no informado',overdue:false};const paidCents=(s.payments||[]).reduce((n,p)=>n+p.amountCents,0),pendingCents=s.totalCents-paidCents;return{paidCents,pendingCents,status:pendingCents===0?'Pagada':paidCents>0?'Pago parcial':'Pendiente',overdue:pendingCents>0&&!!s.dueDate&&s.dueDate<now};}
   function saveSale(d,id,input,now){
     const l=lot(d,id);unique(d,input.id);validateDate(input.date,now);
     const mode=input.mode||'direct';if(!['direct','shipment','historical'].includes(mode))fail('Selecciona cómo registrar la venta.');
@@ -109,12 +110,13 @@
   function addPayment(d,id,sid,input,now){
     const s=sales(d,id).find(s=>s.id===sid);if(!s)fail('Venta no encontrada.');
     if(!input.id||(s.payments||[]).some(p=>p.id===input.id))fail('Este pago ya se registró.');
+    if(s.priceKnown===false||s.paymentKnown===false)fail('Confirma primero el precio y el cobro anterior de esta venta.');
     validateDate(input.date,now);const amountCents=cents(input.amount,false),pending=status(s,now).pendingCents;
     if(amountCents>pending)fail('El pago supera el saldo pendiente.');
     const next=copy(d),target=next.lotSales.find(x=>x.id===sid);(target.payments=target.payments||[]).push({id:input.id,amountCents,date:input.date,reference:String(input.reference||'').slice(0,160),createdAt:input.stamp});return next;
   }
   function summary(d,id,now){
-    const byCurrency={};for(const s of sales(d,id)){const b=byCurrency[s.currency]||(byCurrency[s.currency]={totalCents:0,paidCents:0,pendingCents:0}),p=status(s,now);b.totalCents+=s.totalCents;b.paidCents+=p.paidCents;b.pendingCents+=p.pendingCents;}
+    const byCurrency={};for(const s of sales(d,id)){const b=byCurrency[s.currency]||(byCurrency[s.currency]={totalCents:0,paidCents:0,pendingCents:0}),p=status(s,now);if(s.priceKnown===false)b.unknownPrices=(b.unknownPrices||0)+1;else b.totalCents+=s.totalCents;if(s.paymentKnown===false)b.unknownPayments=(b.unknownPayments||0)+1;else{b.paidCents+=p.paidCents||0;b.pendingCents+=p.pendingCents||0;}}
     const b=balance(d,id),l=lot(d,id),used=actions(d,id).filter(x=>x.type==='consume');
     return{byCurrency,balance:b,samples:{quantity:b.sampleTotal,inTransit:b.sampleTransit,income:0,receivable:0,referenceCostMXN:priceCost(l)===null?null:Math.round(b.sampleTotal*l.unitCost*100)/100,used:b.samplesUsed,consumedCostMXN:used.some(x=>x.costMXN===null)?null:used.reduce((n,x)=>n+x.costMXN,0)},unpricedShipments:base.shipments(d,id).filter(s=>active(s)&&base.purposeOf(s)==='sale'&&!sales(d,id).some(x=>x.shipmentId===s.id))};
   }

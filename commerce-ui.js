@@ -1,7 +1,7 @@
 'use strict';
 (function(){
   const I=window.EBLedger,by=id=>document.getElementById(id);
-  const money=(cents,c)=>new Intl.NumberFormat('es-MX',{style:'currency',currency:c}).format(cents/100)+' '+c;
+  const money=(cents,c)=>cents===null?'Por confirmar':new Intl.NumberFormat('es-MX',{style:'currency',currency:c}).format(cents/100)+' '+c;
   const uid=()=>crypto.randomUUID(),stamp=()=>new Date().toISOString();
   const opts=(items,current)=>items.map(([v,t])=>'<option value="'+esc(v)+'" '+(v===current?'selected':'')+'>'+esc(t)+'</option>').join('');
   const field=(id,label,value='',type='text',extra='')=>'<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" type="'+type+'" value="'+esc(value)+'" '+extra+'></div>';
@@ -52,6 +52,7 @@
   }
   function sampleHints(){const source=by('sample-action').value==='reserve'?'commercial':'sample',a=I.available(data,active,by('sample-location').value,by('sample-tag').value,source);by('sample-available').textContent='Disponible: '+number(a)+' botellas '+(source==='sample'?'de muestra':'comerciales')+'. Ingreso $0; sin cobranza.';}
   function render(id,options={}){
+    if(window.EBSimpleUI&&!new URLSearchParams(location.search).has('classic')&&!options.samples&&!options.shipmentId)return window.EBSimpleUI.open(id,'sale',options.from);
     try{data=freshData();const l=data.lots.find(x=>x.id===id);if(!l)throw Error('Guarda el lote primero.');active=id;view='commerce';const p=PRODUCTS[l.p]||PRODUCTS[0];
       by('app').innerHTML='<div class="heading"><div><div class="eyebrow">'+esc(id)+' · '+p.name+'</div><h1>Ventas y muestras</h1><p class="muted">Cada precio, cliente y pago queda ligado a este lote.</p></div><button class="secondary" id="commerce-back">← Inventario y envíos</button></div>'+overview(id)+'<div id="commerce-errors" class="alert hidden" role="alert"></div><div class="commerce-tabs"><button class="primary" id="tab-sales">Ventas</button><button class="secondary" id="tab-samples">Muestras · $0 ingreso</button><button class="secondary" id="commerce-print">Imprimir reporte</button></div><div id="sales-section">'+saleForm(id,options.shipmentId)+'<h2 class="commerce-list-title">Historial de ventas de este lote</h2>'+saleList(id)+'</div><div id="samples-section" class="hidden">'+sampleForm(id)+sampleList(id)+'</div><p class="small-note">Datos guardados en este navegador. Usa Respaldo; aún no hay sincronización entre dispositivos.</p>';
       by('commerce-back').onclick=()=>window.EBOperations.renderStock(id);by('commerce-print').onclick=()=>{by('print-view').innerHTML='<header><img src="./EB%20logo.jpg" alt="Entre Besos"><h1>Ventas y muestras · '+esc(id)+'</h1></header>'+report(id);window.print();};

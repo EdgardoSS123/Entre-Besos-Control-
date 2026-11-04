@@ -12,7 +12,7 @@ with sync_playwright() as p:
         context=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
         page=context.new_page(); errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
-        page.goto(BASE+'?check=litros32',wait_until='networkidle')
+        page.goto(BASE+'?classic=1&'+'?check=litros32',wait_until='networkidle')
         page.locator('#lot-id').wait_for()
         assert page.evaluate('EBCosts.version')=='eb-costos-3.2'
         page.wait_for_function('Array.from(document.images).every(i=>i.complete && i.naturalWidth>0)')
@@ -69,7 +69,7 @@ with sync_playwright() as p:
     old={'lots':[{'id':'OLD-01','p':0,'date':'2026-11-01','ml':720,'bottles':600,'liters':440,'liquid':200,'includeLoss':True,'costingVersion':3,'unitCost':200.16666666666666,'totalCost':120100}], 'moves':[], 'contacts':[], 'costs':{},'expenses':[{'note':'keep-me'}]}
     ctx=browser.new_context();page=ctx.new_page()
     page.add_init_script('localStorage.setItem("eb-v1",'+json.dumps(json.dumps(old))+');')
-    page.goto(BASE+'?check=migration32',wait_until='networkidle');page.locator('#show-lots').click();page.locator('[data-edit="OLD-01"]').click()
+    page.goto(BASE+'?classic=1&'+'?check=migration32',wait_until='networkidle');page.locator('#show-lots').click();page.locator('[data-edit="OLD-01"]').click()
     assert page.locator('#producedLiters').input_value()=='440'
     assert page.locator('#lossLiters').input_value()=='8'
     assert page.locator('#bottles').input_value()=='600'

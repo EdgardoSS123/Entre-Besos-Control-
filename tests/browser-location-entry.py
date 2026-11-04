@@ -9,7 +9,7 @@ with sync_playwright() as p:
     for width,height in [(1440,1000),(390,844)]:
         ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
         page=ctx.new_page(); errors=[]; page.on('pageerror',lambda e: errors.append(str(e)))
-        page.goto(BASE+'?check=location-entry1',wait_until='networkidle')
+        page.goto(BASE+'?classic=1&'+'?check=location-entry1',wait_until='networkidle')
         page.wait_for_function("document.documentElement.dataset.lotEntryFlow === '1'")
         old={'id':'UNCHANGED-TEST','p':0,'date':'2026-01-01','ml':720,'bottles':12,'unitCost':90,'totalCost':1080}
         seed={'lots':[old],'moves':[],'contacts':[{'name':'Synthetic preservation record'}],'costs':{},'documents':[{'test':'untouched'}]}

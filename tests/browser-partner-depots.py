@@ -10,7 +10,7 @@ with sync_playwright() as p:
  for width,height in [(1440,1000),(390,844)]:
   ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(BASE+'?test=minibodegas1',wait_until='networkidle');page.locator('#lot-id').fill('CI-MINIBODEGAS')
+  page.goto(BASE+'?classic=1&'+'?test=minibodegas1',wait_until='networkidle');page.locator('#lot-id').fill('CI-MINIBODEGAS')
   page.locator('#producedLiters').fill('432');page.locator('#liquid').fill('200');page.locator('#open-lot-stock').click()
   row=page.locator('.opening-row').nth(1);row.locator('[data-tag]').select_option('Nacional');row.locator('[data-amount]').fill('20');row.locator('[data-unit]').select_option('box')
   options=row.locator('[data-location] option').all_text_contents()

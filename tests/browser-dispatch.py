@@ -10,7 +10,7 @@ with sync_playwright() as p:
  for width,height in [(1440,1000),(390,844),(375,812)]:
   ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(BASE,wait_until='networkidle');page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',seed);page.reload();page.locator('#show-lots').click()
+  page.goto(BASE+'?classic=1',wait_until='networkidle');page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',seed);page.reload();page.locator('#show-lots').click()
   page.get_by_role('button',name='Inventario y envíos',exact=True).click();page.locator('#new-shipment').click()
   assert page.locator('#ship-unit').input_value()=='box'
   page.locator('#ship-kind').select_option('distributor');page.locator('#new-destination').click()

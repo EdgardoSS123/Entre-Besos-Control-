@@ -16,7 +16,7 @@ assert.throws(()=>I.receive(d,'LOT','A',now,now,stamp));
 assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',amount:71},now),/Solo hay 420/);
 assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',purpose:'transfer'},now),/consignación/);
 assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',purpose:'unknown'},now));
-assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',amount:1.5},now));
+assert.equal(I.saveShipment(d,'LOT',{...input,id:'X',amount:1.5},now).lotShipments.at(-1).quantity,9);
 assert.throws(()=>I.addLocation(d,'Oaxaca',{kind:'client'}));
 assert.throws(()=>I.addLocation(d,'Otra',{kind:'bad'}));
 d=I.saveShipment(d,'LOT',{...input,id:'B',to:'Cliente · Centro',amount:5,purpose:'sale'},now);
