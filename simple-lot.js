@@ -53,10 +53,10 @@
     ['count','sale','sample','move'].forEach(x=>$s('simple-'+x+'-tab').classList.toggle('active',x===tab));
     const s=tab==='sale'?sampleOptions():stockOptions(),picked=selectedSource(s),location=preferred||I.balance(data,active).rows[0]?.location||'Oaxaca';
     let html='';
-    if(tab==='count')html='<div class="card-head"><h2>¿Cuánto tienes ahora?</h2></div><div class="card-body"><div class="simple-fields">'+sel('simple-location','Ubicación',locations(),location)+inp('simple-amount','Cantidad actual','',decimal)+sel('simple-unit','Unidad',units,'bottle')+'</div><p id="simple-count-before" class="small-note"></p><label class="checklabel"><input id="simple-all-samples" type="checkbox"> Reservar como muestras · siguen en esta bodega</label><details class="simple-details"><summary>Más detalles (opcional)</summary><div class="fields">'+sel('simple-tag','Etiqueta',I.LABELS.map(x=>[x,x]),'Por clasificar')+inp('simple-samples-count','Muestras incluidas (botellas)','0',decimal)+'</div></details><p class="small-note">Reemplaza la cantidad de esta ubicación y etiqueta; no la suma otra vez.</p><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar existencias</button></div>';
+    if(tab==='count')html='<div class="card-head"><h2>¿Cuánto tienes ahora?</h2></div><div class="card-body"><div class="simple-fields">'+sel('simple-location','Ubicación',locations(),location)+inp('simple-amount','Cantidad actual','',decimal)+sel('simple-unit','Unidad',units,'bottle')+'</div><p id="simple-count-before" class="small-note"></p><details class="simple-details"><summary>Más detalles (opcional)</summary><div class="fields">'+sel('simple-tag','Etiqueta',I.LABELS.map(x=>[x,x]),'Por clasificar')+'</div></details><p class="small-note">Reemplaza la cantidad de esta ubicación y etiqueta; no la suma otra vez.</p><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar existencias</button></div>';
     if(tab==='sale')html='<div class="card-head"><h2>Registrar venta</h2></div><div class="card-body"><p id="simple-sale-help" class="small-note">Descuenta de la ubicación y actualiza el total disponible.</p><div class="simple-fields">'+sel('simple-source','Sale de',s.length?s:[['','Primero registra existencias']],picked)+inp('simple-amount','Cantidad vendida','',decimal)+sel('simple-unit','Unidad',units,'box')+'</div><div class="fields simple-price">'+inp('simple-price','Precio de venta','', 'type="text" inputmode="decimal" placeholder="Importe"')+sel('simple-price-basis','Precio por',[['box','Caja de 6'],['bottle','Botella']],'box')+'</div><details class="simple-details" id="simple-sale-details"><summary>Cliente, pago o venta antigua (opcional)</summary><label class="checklabel history-check"><input id="simple-history" type="checkbox"> Ya estaba descontada de mi conteo · NO descontar otra vez</label><div class="fields">'+inp('simple-customer','Cliente','','type="text" maxlength="160" placeholder="Puedes dejarlo pendiente"')+sel('simple-payment','Pago',[['pending','Pendiente'],['paid','Pagada']],'pending')+sel('simple-currency','Moneda',I.CURRENCIES.map(x=>[x,x]),'MXN')+inp('simple-date','Fecha anterior (si la recuerdas)','','type="date" max="'+today()+'"')+'</div></details><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar venta</button></div>';
-    if(tab==='sample'){const a=sampleOptions();html='<div class="card-head"><h2>Entregar muestras</h2><span class="chip">Ingreso $0</span></div><div class="card-body"><p class="small-note">Producto que ya entregaste gratuitamente. Descuenta de la bodega y del saldo total; la producción no cambia.</p><div class="simple-fields">'+sel('simple-source','Sale de',a.length?a:[['','Primero registra existencias']],selectedSource(a))+inp('simple-amount','Cantidad entregada','',decimal)+sel('simple-unit','Unidad',units,'bottle')+'</div><details class="simple-details"><summary>Destinatario o notas (opcional)</summary>'+inp('simple-sample-notes','Destinatario / motivo','','type="text" maxlength="2000"')+'</details><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar muestra y descontar</button></div>';}
-    if(tab==='move')html='<div class="card-head"><h2>Movimiento de bodega</h2></div><div class="card-body"><div class="fields">'+sel('simple-source','De',s.length?s:[['','Primero registra existencias']],picked)+sel('simple-destination','A',locations(),location==='CDMX'?'EB1-1 · Edgardo':'CDMX')+'</div><div class="fields">'+inp('simple-amount','Cantidad','',decimal)+sel('simple-unit','Unidad',units,'box')+'</div><p class="small-note">Al guardar, se resta del origen y se suma al destino. Es un movimiento realizado, no una venta.</p><label class="checklabel sample-flag"><input type="checkbox" id="simple-move-samples"> Es muestra · ingreso $0</label><p id="sample-move-help" class="small-note">Las muestras siguen localizadas en destino, separadas de lo disponible para venta.</p><details class="simple-details"><summary>Flete y moneda (opcional)</summary><div class="fields">'+inp('simple-freight','Costo de flete','', 'type="text" inputmode="decimal" placeholder="Si lo conoces"')+sel('simple-currency','Moneda',I.CURRENCIES.map(x=>[x,x]),'MXN')+'</div></details><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar movimiento</button></div>';
+    if(tab==='sample'){const a=sampleOptions();html='<div class="card-head"><h2>Muestras</h2><span class="chip">Ingreso $0</span></div><div class="card-body"><p class="small-note">Las entregas descuentan botellas. Reservar o liberar cambia únicamente su clasificación en bodega.</p>'+sel('simple-sample-action','Operación',[['consume','Entregar sin cobro'],['reserve','Reservar en bodega'],['release','Liberar para venta o traslado']],'consume')+'<div class="simple-fields">'+sel('simple-source','Sale de',a.length?a:[['','Primero registra existencias']],selectedSource(a))+inp('simple-amount','Cantidad','',decimal)+sel('simple-unit','Unidad',units,'bottle')+'</div><details class="simple-details"><summary>Destinatario o notas (opcional)</summary>'+inp('simple-sample-notes','Destinatario / motivo','','type="text" maxlength="2000"')+'</details><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar operación de muestras</button></div>';}
+    if(tab==='move')html='<div class="card-head"><h2>Movimiento de bodega</h2></div><div class="card-body"><div class="fields">'+sel('simple-source','De',s.length?s:[['','Primero registra existencias']],picked)+sel('simple-destination','A',locations(),location==='CDMX'?'EB1-1 · Edgardo':'CDMX')+'</div><div class="fields">'+inp('simple-amount','Cantidad','',decimal)+sel('simple-unit','Unidad',units,'box')+'</div><p class="small-note">Al guardar, se resta del origen y se suma al destino. Es un movimiento realizado, no una venta.</p><details class="simple-details"><summary>Flete y moneda (opcional)</summary><div class="fields">'+inp('simple-freight','Costo de flete','', 'type="text" inputmode="decimal" placeholder="Si lo conoces"')+sel('simple-currency','Moneda',I.CURRENCIES.map(x=>[x,x]),'MXN')+'</div></details><div id="simple-preview" class="simple-preview"></div><button class="primary" id="simple-save">Guardar movimiento</button></div>';
     $s('simple-form').innerHTML=html;
     if(tab==='count'){$s('simple-location').onchange=loadCount;$s('simple-tag').onchange=loadCountBucket;loadCount();}
     if(tab==='sale'){$s('simple-history').onchange=()=>{
@@ -65,11 +65,6 @@
       $s('simple-payment').innerHTML=opts(history?[['unknown','No recuerdo'],['pending','Pendiente'],['paid','Pagada']]:[['pending','Pendiente'],['paid','Pagada']],history?'unknown':'pending');
       $s('simple-sale-help').textContent=history?'Solo úsalo si esa venta YA está excluida de tus existencias. No descuenta otra vez. Cliente, precio y fecha pueden quedar pendientes.':'Descuenta de la ubicación y actualiza el total disponible.';preview();
     };}
-    if(tab==='move'){
-      const all=sampleOptions();$s('simple-source').innerHTML=opts(all.length?all:[['','Primero registra existencias']],selectedSource(all));
-      const suggestSample=()=>{const [loc,tag]=selectedBucket('simple-source'),r=I.balance(data,active).rows.find(x=>x.location===loc&&x.tag===tag);$s('simple-move-samples').checked=!!r&&r.quantity>0&&r.quantity===r.sampleQuantity;preview();};
-      $s('simple-source').onchange=suggestSample;$s('simple-move-samples').onchange=preview;suggestSample();
-    }
     $s('simple-form').addEventListener('input',preview);$s('simple-form').addEventListener('change',preview);bind('simple-save',save);preview();
   }
   function loadCount(){
@@ -78,22 +73,27 @@
   }
   function loadCountBucket(){
     const r=I.balance(data,active).rows.find(r=>r.location===$s('simple-location').value&&r.tag===$s('simple-tag').value);
-    expected=[r?.quantity||0,r?.sampleQuantity||0];$s('simple-amount').value=r?String(r.quantity):'';$s('simple-unit').value='bottle';$s('simple-samples-count').value=String(r?.sampleQuantity||0);$s('simple-all-samples').checked=!!r&&r.quantity>0&&r.quantity===r.sampleQuantity;
+    expected=[r?.quantity||0,r?.sampleQuantity||0];$s('simple-amount').value=r?String(r.quantity):'';$s('simple-unit').value='bottle';
     $s('simple-count-before').textContent='Registrado: '+num(expected[0])+' botellas · '+$s('simple-tag').value+'. Puedes escribir 2.5 pallets.';preview();
   }
   function preview(){
     const box=$s('simple-preview');if(!box)return;try{
       const n=I.quantity($s('simple-amount').value,$s('simple-unit').value,screen==='count'),b=I.balance(data,active);
       if(screen==='count'){box.textContent=pretty(n)+' · Total del lote después: '+num(b.total-expected[0]+n)+' botellas.';return;}
-      const [loc,tag]=selectedBucket('simple-source'),isGift=screen==='sample',isSampleMove=screen==='move'&&$s('simple-move-samples').checked,history=screen==='sale'&&!isGift&&$s('simple-history').checked;
-      const a=history?null:(isGift||isSampleMove||screen==='sale')?b.rows.find(r=>r.location===loc&&r.tag===tag)?.quantity||0:I.available(data,active,loc,tag);
+      const [loc,tag]=selectedBucket('simple-source'),isGift=screen==='sample',history=screen==='sale'&&!isGift&&$s('simple-history').checked;
+      const a=history?null:(isGift||screen==='sale')?b.rows.find(r=>r.location===loc&&r.tag===tag)?.quantity||0:I.available(data,active,loc,tag);
       if(!history&&n>a)throw Error('Solo hay '+num(a)+' botellas disponibles en el origen.');
+      if(isGift&&$s('simple-sample-action').value!=='consume'){
+        const reserve=$s('simple-sample-action').value==='reserve',available=I.available(data,active,loc,tag,reserve?'commercial':'sample');
+        if(n>available)throw Error('Solo hay '+num(available)+' botellas para esta operación.');
+        box.textContent=pretty(n)+(reserve?' para reservar.':' para liberar.');return;
+      }
       if(isGift){box.textContent=pretty(n)+' entregadas · Ingreso $0 · Saldo total: '+pretty(b.total-n);return;}
       if(screen==='sale'){
         const p=$s('simple-price').value.trim().replace(',','.');const total=p?fmt(I.quote(n,p,$s('simple-price-basis').value).totalCents,$s('simple-currency').value):'Precio pendiente';
         const reserved=history?0:Math.max(0,n-I.available(data,active,loc,tag));
         box.textContent=pretty(n)+' · '+total+(reserved?' · Se usarán '+num(reserved)+' botellas reservadas como muestra para esta venta.':'')+(history?' · No cambia las existencias.':' · Saldo en origen: '+pretty(a-n)+' · Saldo total: '+pretty(b.total-n));
-      }else box.textContent=pretty(n)+' · '+loc+': '+num(a)+' → '+num(a-n)+' · '+(isSampleMove?'Muestras en destino · Ingreso $0 · ':'')+'Total general sin cambio.';
+      }else box.textContent=pretty(n)+' · '+loc+': '+num(a)+' → '+num(a-n)+' · '+'Total general sin cambio.';
     }catch(e){box.textContent=$s('simple-amount')?.value?e.message:'Escribe la cantidad. Acepta 2.5 pallets o 0.5 pallet.';}
   }
   function save(){
@@ -101,7 +101,7 @@
       const amount=$s('simple-amount').value,unit=$s('simple-unit').value,input={id:formId,amount,unit,stamp:stamp()};
       if(screen==='count'){
         preferred=$s('simple-location').value;
-        Object.assign(input,{location:preferred,tag:$s('simple-tag').value,allSamples:$s('simple-all-samples').checked,samples:$s('simple-samples-count').value||'0',expected});write(d=>I.countStock(d,active,input,today()));
+        Object.assign(input,{location:preferred,tag:$s('simple-tag').value,samples:Math.min(expected[1],I.quantity(amount,unit,true)),expected});write(d=>I.countStock(d,active,input,today()));
       }else{
         const [from,tag]=selectedBucket('simple-source');Object.assign(input,{from,tag});preferred=from||preferred;
         if(screen==='sale'){
@@ -114,12 +114,13 @@
             return I.sellStock(d,active,input,date);
           });
         }else if(screen==='sample'){
-          Object.assign(input,{stockType:'any',notes:$s('simple-sample-notes').value});write(d=>I.deliverSamples(d,active,input,today()));
+          Object.assign(input,{stockType:'any',notes:$s('simple-sample-notes').value});const type=$s('simple-sample-action').value,date=today();
+          write(d=>type==='consume'?I.deliverSamples(d,active,input,date):I.sampleAction(d,active,{...input,type,date,location:from,stockType:type==='reserve'?'commercial':'sample',notes:input.notes||'Clasificación desde Muestras'},date));
         }else{
-          Object.assign(input,{to:$s('simple-destination').value,isSample:$s('simple-move-samples').checked,stockType:'commercial',cost:$s('simple-freight').value.trim().replace(',','.'),currency:$s('simple-currency').value});write(d=>I.moveStock(d,active,input,today()));
+          Object.assign(input,{to:$s('simple-destination').value,isSample:false,stockType:'commercial',cost:$s('simple-freight').value.trim().replace(',','.'),currency:$s('simple-currency').value});write(d=>I.moveStock(d,active,input,today()));
         }
       }
-      toast(screen==='count'?'Existencias actualizadas.':screen==='sale'?'Venta registrada.':screen==='sample'?'Muestras entregadas y saldo actualizado.':'Origen y destino actualizados.');open(active,screen,preferred);
+      toast(screen==='count'?'Existencias actualizadas.':screen==='sale'?'Venta registrada.':screen==='sample'?'Operación de muestras registrada.':'Origen y destino actualizados.');open(active,screen,preferred);
     }catch(e){fail(e);}
   }
   function applySaleDialog(id,saleId){
