@@ -21,6 +21,23 @@
     (next.lotStockAdjustments=next.lotStockAdjustments||[]).push({id:input.id,lotId:id,location:input.location,tag:input.tag,delta:n-prev.quantity,sampleDelta:s-prev.sampleQuantity,previousQuantity:prev.quantity,previousSamples:prev.sampleQuantity,quantity:n,samples:s,inputAmount:String(input.amount),inputUnit:input.unit,date:now,createdAt:input.stamp,reason:'Conteo actual declarado; diferencia sin clasificar',status:'active'});
     I.balance(next,id);return next;
   }
+  function packCounts(n) {
+    if(!Number.isSafeInteger(n)||n<0)fail('Cantidad de botellas inválida.');
+    return {bottles:n,fullCases:Math.floor(n/6),looseBottles:n%6,caseSize:6,equivalentCases:n/6};
+  }
+  function initializeOrigin(d,id,where,now,stamp) {
+    const l=lot(d,id);if(!I.locations(d).includes(where))fail('Selecciona una bodega origen válida.');
+    // An origin is metadata on an established lot. It never relocates or duplicates stock.
+    const hasActivity=I.opening(d,id)||['lotStockAdjustments','lotShipments','lotSales','lotSampleActions'].some(k=>(d[k]||[]).some(x=>x.lotId===id));
+    if(hasActivity||l.originSeeded)return d;
+    const next=I.saveOpening(d,id,{asOf:now,complete:true,rows:[{location:where,tag:'Por clasificar',amount:l.bottles,unit:'bottle',isSample:!!l.originSamples}],notes:'Producción inicial en bodega origen.',stamp},now);
+    Object.assign(next.lots.find(x=>x.id===id),{originSeeded:true,originWarehouse:where,originQuantity:l.bottles});
+    return next;
+  }
+  function deliverSamples(d,id,input,now) {
+    const stockType=input.stockType||'any';
+    return I.sampleAction(d,id,{...input,type:'consume',stockType,date:now,location:input.from,notes:String(input.notes||'').trim()||'Muestras entregadas sin cargo.'},now);
+  }
   function knownSale(d,id,input,now){
     const l=lot(d,id);unique(d,input.id);const n=I.quantity(input.amount,input.unit);
     const o=I.opening(d,id);if(!o)fail('Primero registra lo que tienes hoy.');
@@ -46,10 +63,10 @@
   }
   function moveStock(d,id,input,now){
     if(input.from===input.to)fail('Elige un destino distinto al origen.');
-    return I.saveShipment(d,id,{id:input.id,from:input.from,to:input.to,tag:input.tag,amount:String(input.amount).replace(',','.'),unit:input.unit,date:now,received:true,historical:false,purpose:I.locationInfo(d,input.to).kind==='warehouse'?'transfer':'consignment',stockType:input.stockType||'commercial',costKnown:String(input.cost??'').trim()!=='',costAmount:input.cost,currency:input.currency||'MXN',included:false,notes:'Movimiento simple confirmado. Sigue siendo producto de Entre Besos.',reference:'',stamp:input.stamp},now);
+    return I.saveShipment(d,id,{id:input.id,from:input.from,to:input.to,tag:input.tag,amount:String(input.amount).replace(',','.'),unit:input.unit,date:now,received:true,historical:false,purpose:I.locationInfo(d,input.to).kind==='warehouse'?'transfer':'consignment',stockType:input.stockType||'commercial',isSample:input.isSample===true,costKnown:String(input.cost??'').trim()!=='',costAmount:input.cost,currency:input.currency||'MXN',included:false,notes:'Movimiento simple confirmado. Sigue siendo producto de Entre Besos.',reference:'',stamp:input.stamp},now);
   }
   function sellStock(d,id,input,now){
     return I.saveSale(d,id,{...input,amount:String(input.amount).replace(',','.'),mode:'direct',date:now,customer:String(input.customer||'').trim()||'Cliente no identificado',paidAmount:input.payment==='paid'?(I.quote(I.quantity(input.amount,input.unit),input.price,input.priceBasis).totalCents/100).toFixed(2):'0',paymentDate:now,notes:input.notes||'',reference:'',dueDate:''},now);
   }
-  return{...I,simpleVersion:'1.0',countStock,knownSale,reconciliation,moveStock,sellStock};
+  return{...I,simpleVersion:'1.1-stock',countStock,knownSale,reconciliation,moveStock,sellStock,packCounts,initializeOrigin,deliverSamples};
 });

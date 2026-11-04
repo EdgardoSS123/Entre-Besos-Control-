@@ -11,8 +11,8 @@ COPY tests/simple-lot.cjs ./tests/
 RUN node --check simple-core.js && node --check simple-lot.js && node tests/simple-lot.cjs
 
 COPY corrections-core.js corrections-ui.js ./
-COPY tests/corrections.cjs ./tests/
-RUN node --check corrections-core.js && node --check corrections-ui.js && node tests/corrections.cjs
+COPY tests/corrections.cjs tests/origin-stock.cjs tests/always-samples.cjs ./tests/
+RUN node --check corrections-core.js && node --check corrections-ui.js && node tests/corrections.cjs && node tests/origin-stock.cjs && node tests/always-samples.cjs
 
 FROM nginx:alpine
 # Preserve previous modules and data keys. Publish the tested lot workspace.

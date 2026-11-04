@@ -18,7 +18,7 @@
     const n=Math.round(Number(v)*100);if(!Number.isSafeInteger(n)||n<0||(!zero&&n===0))fail('El precio de venta debe ser mayor que cero. Para entrega gratuita utiliza Muestra.');return n;
   }
   function validateDate(date,now){if(!dateOK(date)||date>now)fail('Revisa la fecha; no puede estar en el futuro.');}
-  function lastMovement(d,id){return [...base.shipments(d,id).filter(s=>!s.historical&&active(s)).map(s=>s.receivedDate||s.date),...sales(d,id).filter(s=>s.stockEffect).map(s=>s.date),...actions(d,id).map(x=>x.date)].filter(Boolean).sort().pop();}
+  function lastMovement(d,id){return [...base.shipments(d,id).filter(s=>!s.historical&&active(s)).map(s=>s.receivedDate||s.date),...sales(d,id).filter(s=>s.stockEffect).map(s=>s.inventoryAppliedDate||s.date),...actions(d,id).map(x=>x.date)].filter(Boolean).sort().pop();}
   function afterCut(d,id,date,now){
     validateDate(date,now);const o=base.opening(d,id);if(!o)fail('Primero guarda el inventario inicial.');
     if(date<o.asOf)fail('La operación es anterior al inventario inicial. Usa la opción de venta histórica sin descuento.');
@@ -32,7 +32,7 @@
     for(const a of (d.lotStockAdjustments||[]).filter(x=>x.lotId===id&&active(x)))row(a.location,a.tag).sampleQuantity+=a.sampleDelta;
     let sampleTransit=0,samplesUsed=0,directSales=0;
     for(const s of base.shipments(d,id).filter(s=>!s.historical&&active(s))){
-      if(s.stockType==='sample')row(s.from,s.tag).sampleQuantity-=s.quantity;
+      if(s.sourceSampleQuantity!==undefined){if(!Number.isSafeInteger(s.sourceSampleQuantity)||s.sourceSampleQuantity<0||s.sourceSampleQuantity>s.quantity)fail('Revisa las muestras del movimiento.');row(s.from,s.tag).sampleQuantity-=s.sourceSampleQuantity;}else if(s.stockType==='sample')row(s.from,s.tag).sampleQuantity-=s.quantity;
       if(base.purposeOf(s)==='sample'||s.stockType==='sample'){
         if(s.status==='received'&&base.purposeOf(s)!=='sale')row(s.to,s.tag).sampleQuantity+=s.quantity;
         else if(s.status==='transit')sampleTransit+=s.quantity;
@@ -42,7 +42,7 @@
       const r=row(a.location,a.tag);
       if(a.type==='reserve')r.sampleQuantity+=a.quantity;
       else if(a.type==='release')r.sampleQuantity-=a.quantity;
-      else if(a.type==='consume'){r.quantity-=a.quantity;r.sampleQuantity-=a.quantity;samplesUsed+=a.quantity;}
+      else if(a.type==='consume'){r.quantity-=a.quantity;if(a.sourceSampleQuantity!==undefined)r.sampleQuantity-=a.sourceSampleQuantity;else if(a.stockType!=='commercial')r.sampleQuantity-=a.quantity;samplesUsed+=a.quantity;}
     }
     for(const s of sales(d,id))if(s.stockEffect){row(s.from,s.tag).quantity-=s.quantity;directSales+=s.quantity;}
     const rows=[...map.values()].map(r=>({...r,commercialQuantity:r.quantity-r.sampleQuantity}));
@@ -60,11 +60,21 @@
     balance(next,id);return next;
   }
   function saveShipment(d,id,input,now){
-    const purpose=input.purpose||'transfer',stockType=input.stockType||'commercial';
+    const isSample=input.isSample===true;
+    const purpose=isSample?'sample':input.purpose||'transfer';
+    let stockType=input.stockType||'commercial',sourceSampleQuantity;
     if(!['commercial','sample'].includes(stockType))fail('Selecciona inventario comercial o muestras.');
     if(stockType==='sample'&&purpose==='sale')fail('Las muestras no se venden. Reclasifica expresamente a inventario comercial antes de vender.');
-    if(!input.historical){afterCut(d,id,input.date,now);const n=base.quantity(input.amount,input.unit),a=available(d,id,input.from,input.tag,stockType);if(n>a)fail('Solo hay '+a+' botellas '+(stockType==='sample'?'de muestra':'comerciales')+' disponibles en '+input.from+'.');}
-    const next=base.saveShipment(d,id,input,now),s=next.lotShipments.find(x=>x.id===input.id);s.stockType=stockType;
+    if(!input.historical){
+      afterCut(d,id,input.date,now);
+      const n=base.quantity(input.amount,input.unit);
+      const r=balance(d,id).rows.find(x=>x.location===input.from&&x.tag===input.tag);
+      const a=isSample?(r?.quantity||0):available(d,id,input.from,input.tag,stockType);
+      if(n>a)fail('Solo hay '+a+' botellas disponibles en '+input.from+'.');
+      if(isSample){sourceSampleQuantity=Math.min(n,r?.sampleQuantity||0);stockType=sourceSampleQuantity===n?'sample':'commercial';}
+    }
+    const next=base.saveShipment(d,id,{...input,purpose},now),s=next.lotShipments.find(x=>x.id===input.id);s.stockType=stockType;
+    if(sourceSampleQuantity!==undefined)s.sourceSampleQuantity=sourceSampleQuantity;
     if(purpose==='sample'||stockType==='sample')s.sampleAccounting={category:'Muestras y promoción',income:0,receivable:0,unitCostMXN:priceCost(lot(d,id)),paymentStatus:'No aplica',note:'Traslado de muestras; no representa venta ni consumo.'};
     balance(next,id);return next;
   }
@@ -73,11 +83,13 @@
     const l=lot(d,id);unique(d,input.id);afterCut(d,id,input.date,now);
     if(!['reserve','release','consume'].includes(input.type))fail('Selecciona la operación de muestras.');
     if(!base.locations(d).includes(input.location)||!base.LABELS.includes(input.tag))fail('Selecciona ubicación y etiqueta.');
-    const n=base.quantity(input.amount,input.unit),source=input.type==='reserve'?'commercial':'sample',a=available(d,id,input.location,input.tag,source);
+    const stockType=input.stockType||'sample';if(!['commercial','sample','any'].includes(stockType)||stockType==='any'&&input.type!=='consume')fail('Selecciona el tipo de existencias.');
+    const n=base.quantity(input.amount,input.unit),source=input.type==='reserve'||(input.type==='consume'&&stockType==='commercial')?'commercial':'sample',a=stockType==='any'?(balance(d,id).rows.find(r=>r.location===input.location&&r.tag===input.tag)?.quantity||0):available(d,id,input.location,input.tag,source);
     if(n>a)fail('Solo hay '+a+' botellas '+(source==='sample'?'de muestra':'comerciales')+' disponibles.');
     const notes=String(input.notes||'').trim();if(input.type!=='reserve'&&!notes)fail('Indica el motivo o destinatario para conservar el historial.');
     const next=copy(d),unitCostMXN=priceCost(l);
-    (next.lotSampleActions=next.lotSampleActions||[]).push({id:input.id,lotId:id,type:input.type,location:input.location,tag:input.tag,quantity:n,date:input.date,notes:notes.slice(0,2000),createdAt:input.stamp,category:'Muestras y promoción',income:0,receivable:0,unitCostMXN,costMXN:unitCostMXN===null?null:Math.round(n*unitCostMXN*100)/100});
+    const sampleDebit=stockType==='any'?{sourceSampleQuantity:Math.min(n,available(d,id,input.location,input.tag,'sample'))}:{};
+    (next.lotSampleActions=next.lotSampleActions||[]).push({id:input.id,lotId:id,type:input.type,stockType,...sampleDebit,location:input.location,tag:input.tag,quantity:n,date:input.date,notes:notes.slice(0,2000),createdAt:input.stamp,category:'Muestras y promoción',income:0,receivable:0,unitCostMXN,costMXN:unitCostMXN===null?null:Math.round(n*unitCostMXN*100)/100});
     balance(next,id);return next;
   }
   function quote(n,price,basis){if(!['bottle','box'].includes(basis))fail('El precio debe ser por botella o por caja de 6.');const value=cents(price,false),totalCents=Math.round(n*value/(basis==='box'?6:1));if(!Number.isSafeInteger(totalCents)||totalCents<=0)fail('Revisa el total de la venta.');return{priceCents:value,priceBasis:basis,totalCents};}

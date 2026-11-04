@@ -9,7 +9,7 @@ with sync_playwright() as p:
  for width,height in [(1440,1000),(390,844)]:
   ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(URL,wait_until='networkidle');page.locator('#lot-id').fill('EDIT-TEST');page.locator('#producedLiters').fill('1440');page.locator('#liquid').fill('200');page.locator('#save-lot').click();page.locator('[data-simple-open="EDIT-TEST"]').click()
+  page.goto(URL,wait_until='networkidle');page.locator('#list-new').click();page.locator('#lot-id').fill('EDIT-TEST');page.locator('#producedLiters').fill('1440');page.locator('#liquid').fill('200');page.locator('#save-lot').click();page.locator('[data-simple-open="EDIT-TEST"]').click()
   page.locator('#simple-location').select_option('USA');page.locator('#simple-amount').fill('3');page.locator('#simple-unit').select_option('pallet');page.locator('#simple-save').click()
   page.locator('#simple-sale-tab').click();page.locator('#simple-amount').fill('0.5');page.locator('#simple-unit').select_option('pallet');page.locator('#simple-price').fill('600');page.locator('#simple-save').click()
   page.locator('#simple-move-tab').click();page.locator('#simple-destination').select_option('CDMX');page.locator('#simple-amount').fill('10');page.locator('#simple-unit').select_option('box');page.locator('#simple-save').click()

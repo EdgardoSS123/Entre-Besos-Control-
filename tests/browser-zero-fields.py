@@ -18,6 +18,7 @@ with sync_playwright() as p:
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.goto(URL, wait_until='networkidle')
+        if page.locator('#list-new').count(): page.locator('#list-new').click()
         page.locator('#lot-id').wait_for()
         assert page.locator('#zero-on-edit').count() == 1, 'Published zero helper missing'
         page.locator('#lot-id').fill('ZERO-UI-TEST')
@@ -66,9 +67,9 @@ with sync_playwright() as p:
         assert lots[0]['components'][3] == 0
         assert lots[0]['unitCost'] == 169.5
         page.reload(wait_until='networkidle')
-        page.locator('#lot-id').wait_for()
+        expect(page.locator('h1')).to_have_text('Mis lotes')
         assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots[0].unitCost") == 169.5
-        page.locator('#show-lots').click()
+        if page.locator('#show-lots').count(): page.locator('#show-lots').click()
         if page.locator('[data-edit="ZERO-UI-TEST"]').count():
             page.locator('[data-edit="ZERO-UI-TEST"]').click()
         else:
