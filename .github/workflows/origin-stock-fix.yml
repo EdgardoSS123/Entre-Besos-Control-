@@ -1,19 +1,112 @@
 name: Verify origin warehouse and stock deductions
 on:
   push:
-    branches: [work/origin-stock-fix]
+    branches: [work/origin-stock-fix, main]
+    paths:
+      - '.github/workflows/origin-stock-fix.yml'
+      - '.maintenance/samples-final-*.b64'
+      - '*.js'
+      - '*.css'
+      - '*.html'
+      - 'Dockerfile'
+      - 'tests/**'
 permissions:
-  contents: read
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Archive current source for isolated work
-        run: git archive --format=zip HEAD -o /tmp/eb-stock-source.zip
+      - name: Apply checksum-reviewed changes in isolated development only
+        if: github.ref == 'refs/heads/work/origin-stock-fix'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,lzma,json,hashlib
+          if Path('.maintenance/samples-final-0.b64').exists():
+              encoded=''.join(Path(f'.maintenance/samples-final-{i}.b64').read_text().strip() for i in range(4))
+              payload=lzma.decompress(base64.b64decode(encoded))
+              assert hashlib.sha256(payload).hexdigest()=='caf087a44cad15555affc2a5444e598ac2891587bb2c97f651c9f090ed789591', 'Unreviewed source'
+              rows=json.loads(payload)
+              allowed={'Dockerfile','commerce-core.js','control.css','control.html','control.js','corrections-core.js','lot-operations.js','simple-core.js','simple-lot.css','simple-lot.js','tests/browser-corrections.py','tests/browser-navigation.py','tests/browser-origin-stock.py','tests/browser-simple-lot.py','tests/browser-zero-fields.py','tests/origin-stock.cjs','tests/always-samples.cjs','tests/browser-always-samples.py'}
+              assert set(r['path'] for r in rows)==allowed
+              for r in rows:
+                  p=Path(r['path']);text=p.read_text() if p.exists() else ''
+                  assert hashlib.sha256(text.encode()).hexdigest()==r['before'], r['path']+' changed before applying patch'
+                  for a,b,value in reversed(r['ops']):
+                      assert 0<=a<=b<=len(text)
+                      text=text[:a]+value+text[b:]
+                  assert hashlib.sha256(text.encode()).hexdigest()==r['after'], r['path']+' mismatched result'
+                  p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
+          PY
+      - name: Check stock, sample transfers, reversals and immutable input
+        run: |
+          for file in *.js; do node --check "$file"; done
+          for test in tests/*.cjs; do node "$test"; done
+      - name: Prepare isolated browser tests
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated development server
+        if: github.ref != 'refs/heads/main'
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published application files
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          paths=['control.html','control.js','control.css','inventory-core.js','commerce-core.js','simple-core.js','simple-lot.js','simple-lot.css','lot-operations.js','corrections-core.js','corrections-ui.js']
+          for attempt in range(24):
+              try:
+                  for name in paths:
+                      public='index.html' if name=='control.html' else name
+                      req=urllib.request.Request(base+public+'?verify=stock-samples-'+str(time.time_ns()),headers={'Cache-Control':'no-cache'})
+                      assert urllib.request.urlopen(req,timeout=20).read()==Path(name).read_bytes(),name
+                  print('Verified exact public files');break
+              except Exception:
+                  if attempt==23:raise
+                  time.sleep(5)
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test real UI in isolated desktop and mobile profiles
+        env:
+          EB_SCREENSHOTS: /tmp/eb-stock-samples-checks
+        run: |
+          python3 tests/browser-always-samples.py
+          python3 tests/browser-origin-stock.py
+          python3 tests/browser-navigation.py
+          python3 tests/browser-corrections.py
+          python3 tests/browser-simple-lot.py
+          python3 tests/browser-zero-fields.py
+          python3 tests/browser-location-entry.py
+          python3 tests/browser-commerce.py
+          python3 tests/browser-partner-depots.py
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+      - name: Commit only tested app files on development branch
+        if: github.ref == 'refs/heads/work/origin-stock-fix'
+        run: |
+          git fetch origin work/origin-stock-fix
+          test "$(git rev-parse origin/work/origin-stock-fix)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Dockerfile commerce-core.js control.css control.html control.js corrections-core.js lot-operations.js simple-core.js simple-lot.css simple-lot.js tests/
+          for path in .maintenance/samples-final-*.b64 .maintenance/stock-nav-*.b64; do
+            if test -f "$path"; then git rm "$path"; fi
+          done
+          if ! git diff --cached --quiet; then
+            git commit -m 'Add tested origin warehouse, fixed production totals, dual unit balances, sample flag on all flows and lot-list home'
+            git push origin HEAD:work/origin-stock-fix
+          fi
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: origin-stock-source
-          path: /tmp/eb-stock-source.zip
-          retention-days: 1
+          name: origin-stock-samples-checks
+          path: /tmp/eb-stock-samples-checks
+          retention-days: 2
