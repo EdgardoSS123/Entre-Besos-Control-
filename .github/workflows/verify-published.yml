@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [control.html, control.css, control.js, production.css, lot-operations.css, lot-operations.js, inventory-core.js, Dockerfile, 'tests/**', '.github/workflows/verify-published.yml']
+    paths: [control.html, control.css, control.js, production.css, lot-operations.css, lot-operations.js, inventory-core.js, commerce-core.js, commerce-ui.js, commerce.css, Dockerfile, 'tests/**', '.github/workflows/verify-published.yml']
 permissions:
   contents: read
 concurrency:
@@ -25,7 +25,7 @@ jobs:
               r=urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'EntreBesosDeploymentCheck'}),timeout=20)
               assert r.status==200
               return r.read()
-          paths=[('index.html','control.html'),('control.css','control.css'),('production.css','production.css'),('control.js','control.js'),('inventory-core.js','inventory-core.js'),('lot-operations.js','lot-operations.js'),('lot-operations.css','lot-operations.css'),('legacy.html','index.html'),('EB logo.jpg','EB logo.jpg'),('EB espadin.jpg','EB espadin.jpg'),('EB Cup.jpg','EB Cup.jpg'),('EB DB.jpg','EB DB.jpg')]
+          paths=[('index.html','control.html'),('control.css','control.css'),('production.css','production.css'),('control.js','control.js'),('inventory-core.js','inventory-core.js'),('lot-operations.js','lot-operations.js'),('lot-operations.css','lot-operations.css'),('commerce-core.js','commerce-core.js'),('commerce-ui.js','commerce-ui.js'),('commerce.css','commerce.css'),('legacy.html','index.html'),('EB logo.jpg','EB logo.jpg'),('EB espadin.jpg','EB espadin.jpg'),('EB Cup.jpg','EB Cup.jpg'),('EB DB.jpg','EB DB.jpg')]
           expected={name:read(src+urllib.parse.quote(original)) for name,original in paths}
           for attempt in range(45):
               try:
@@ -45,6 +45,8 @@ jobs:
               f.write(read(src+'tests/browser-dispatch.py'))
           with open('/tmp/eb-browser-zero-fields.py','wb') as f:
               f.write(read(src+'tests/browser-zero-fields.py'))
+          with open('/tmp/eb-browser-commerce.py','wb') as f:
+              f.write(read(src+'tests/browser-commerce.py'))
           PY
       - name: Install pinned browser test driver
         run: |
@@ -57,6 +59,7 @@ jobs:
         run: |
           python3 /tmp/eb-browser-inventory.py
           python3 /tmp/eb-browser-dispatch.py
+          python3 /tmp/eb-browser-commerce.py
       - name: Test direct zero-field editing on desktop and touch
         env:
           EB_TEST_URL: https://entre-besos-web-production.up.railway.app/
