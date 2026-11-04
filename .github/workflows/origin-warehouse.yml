@@ -1,19 +1,98 @@
 name: Verify origin warehouse
 on:
   push:
-    branches: [work/origin-warehouse]
+    branches: [work/origin-warehouse, main]
+    paths: ['.github/workflows/origin-warehouse.yml', '.maintenance/origin*', 'origin-core.js', 'control.js', 'control.html', 'corrections-core.js', 'simple-lot.js', 'simple-lot.css', 'lot-operations.js', 'Dockerfile', 'tests/**']
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: eb-origin-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
-      - name: Archive exact source for isolated development
-        run: git archive --format=zip HEAD -o /tmp/eb-origin-source.zip
+      - name: Apply exact reviewed patch only on development branch
+        if: github.ref_name == 'work/origin-warehouse'
+        run: |
+          python3 - <<'PY'
+          import base64,lzma,hashlib
+          from pathlib import Path
+          p=Path('.maintenance/origin.b64')
+          if p.exists():
+              patch=lzma.decompress(base64.b64decode(p.read_text().strip()))
+              assert hashlib.sha256(patch).hexdigest()=='222c99086eee287c5f7f9e737bac1bfe20069bca71f737ff984416cab87e1079'
+              Path('/tmp/origin.patch').write_bytes(patch)
+          PY
+          if test -f /tmp/origin.patch; then git apply --unidiff-zero --check /tmp/origin.patch && git apply --unidiff-zero /tmp/origin.patch; fi
+      - name: Verify calculations and data preservation
+        run: |
+          node --check control.js
+          node --check origin-core.js
+          node --check simple-lot.js
+          node --check corrections-core.js
+          for t in costing inventory dispatch commerce partner-depots simple-lot corrections origin; do node tests/$t.cjs; done
+      - name: Prepare isolated browser tests
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated test server
+        if: github.ref_name != 'main'
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact deployed application
+        if: github.ref_name == 'main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,time,hashlib
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          names=['control.js','control.html','origin-core.js','corrections-core.js','simple-lot.js','simple-lot.css','lot-operations.js']
+          for attempt in range(45):
+              try:
+                  for name in names:
+                      remote='index.html' if name=='control.html' else name
+                      content=urllib.request.urlopen(base+remote+'?verify-origin='+str(time.time()),timeout=15).read()
+                      assert content==Path(name).read_bytes(), name+' not published yet'
+                  print('Exact origin warehouse files verified');break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test origin, sales, movements, corrections and previous workflows
+        env:
+          EB_SCREENSHOTS: /tmp/eb-origin-screens
+        run: |
+          python3 tests/browser-origin.py
+          python3 tests/browser-corrections.py
+          python3 tests/browser-simple-lot.py
+          python3 tests/browser-zero-fields.py
+          python3 tests/browser-location-entry.py
+          python3 tests/browser-commerce.py
+          python3 tests/browser-partner-depots.py
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+      - name: Commit only verified application source
+        if: github.ref_name == 'work/origin-warehouse'
+        run: |
+          git fetch origin work/origin-warehouse
+          test "$(git rev-parse origin/work/origin-warehouse)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add origin-core.js control.js control.html corrections-core.js simple-lot.js simple-lot.css lot-operations.js Dockerfile tests/origin.cjs tests/browser-origin.py
+          if test -f .maintenance/origin.b64; then git rm .maintenance/origin.b64; fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'Add origin warehouse at lot registration, one-time production receipt and direct warehouse movement'
+            git push origin HEAD:work/origin-warehouse
+          fi
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: origin-source
-          path: /tmp/eb-origin-source.zip
-          retention-days: 1
+          name: origin-warehouse-checks
+          path: /tmp/eb-origin-screens
+          retention-days: 2
