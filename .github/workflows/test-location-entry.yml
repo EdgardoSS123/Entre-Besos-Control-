@@ -1,0 +1,63 @@
+name: Verify save and location entry
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, work/lot-entry-flow]
+    paths: [control.html, tests/browser-location-entry.py, '.github/workflows/test-location-entry.yml']
+permissions:
+  contents: read
+concurrency:
+  group: lot-entry-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify existing calculations
+        run: |
+          node --check control.js
+          node --check lot-operations.js
+          node tests/costing.cjs
+          node tests/inventory.cjs
+          node tests/dispatch.cjs
+      - name: Prepare browser
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Verify branch build or exact published page
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            python3 - <<'PY'
+          import time, urllib.request
+          from pathlib import Path
+          expected=Path('control.html').read_bytes()
+          for attempt in range(45):
+              try:
+                  url='https://entre-besos-web-production.up.railway.app/?check=location-entry1'
+                  got=urllib.request.urlopen(url,timeout=15).read()
+                  assert got==expected
+                  print('Published HTML matches this commit')
+                  break
+              except Exception:
+                  time.sleep(4)
+          else:
+              raise AssertionError('Updated HTML not published')
+          PY
+            echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+          else
+            python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+            for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+            echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+          fi
+      - name: Test draft preservation and direct location entry
+        env:
+          EB_SCREENSHOTS: /tmp/eb-location-screens
+        run: python3 tests/browser-location-entry.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: location-entry-screens
+          path: /tmp/eb-location-screens
+          retention-days: 2

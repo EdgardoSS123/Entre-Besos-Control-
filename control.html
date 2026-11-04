@@ -38,4 +38,65 @@
     }
   }, true);
 })();
+</script>
+<script id="lot-entry-flow">
+/* Let a new lot continue to its opening inventory without losing the draft. */
+(function () {
+  'use strict';
+  function installLotEntryFlow() {
+    if (!window.EBOperations || typeof saveLot !== 'function' || typeof renderEditor !== 'function') return;
+    const previousUpdate = update;
+    const previousRender = renderEditor;
+    let busy = false;
+    function enterInventory() {
+      if (busy) return;
+      busy = true;
+      try {
+        readDraft();
+        saveDraft();
+        const requestedId = draft.id;
+        // Use existing validation, revision protection and storage error handling.
+        saveLot();
+        // Stay in the form whenever validation or persistence failed.
+        if (view === 'lots' && !dirty && draft.editId === requestedId) {
+          const stored = freshData().lots.find(function (lot) { return lot.id === requestedId; });
+          if (stored && JSON.stringify(stored) === loadedRevision) {
+            window.EBOperations.renderStock(requestedId);
+            const panel = document.getElementById('opening-panel');
+            if (panel) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          }
+        }
+      } catch (error) {
+        const box = document.getElementById('form-errors');
+        if (box) {
+          box.textContent = 'No se pudo abrir la ubicación. Conserva esta pantalla y exporta un respaldo. ' + error.message;
+          box.classList.remove('hidden');
+        } else toast('No se pudo abrir la ubicación. Tus registros no se reiniciaron.');
+      } finally { busy = false; }
+    }
+    function enhance() {
+      const button = document.getElementById('open-lot-stock');
+      if (!button) return;
+      button.disabled = !!storageError;
+      button.textContent = draft.editId ? 'Guardar y abrir inventario →' : 'Guardar y registrar ubicación →';
+      button.title = 'Guarda los costos y abre el inventario actual de este lote.';
+      button.onclick = enterInventory;
+      let help = document.getElementById('lot-entry-help');
+      if (!help) {
+        help = document.createElement('p');
+        help.id = 'lot-entry-help';
+        help.className = 'small-note';
+        help.style.margin = '12px 0 0';
+        button.closest('.lot-tabs').after(help);
+      }
+      help.textContent = '1. Guarda los costos. 2. Indica qué queda en cada bodega. 3. Registra envíos o entregas por venta. La producción no se suma otra vez al inventario.';
+    }
+    update = function () { previousUpdate(); enhance(); };
+    renderEditor = function () { previousRender(); enhance(); };
+    enhance();
+    document.documentElement.dataset.lotEntryFlow = '1';
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installLotEntryFlow, { once: true });
+  else installLotEntryFlow();
+})();
 </script></body></html>
