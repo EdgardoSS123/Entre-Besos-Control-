@@ -69,7 +69,11 @@ with sync_playwright() as p:
         page.locator('#lot-id').wait_for()
         assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots[0].unitCost") == 169.5
         page.locator('#show-lots').click()
-        page.locator('[data-edit="ZERO-UI-TEST"]').click()
+        if page.locator('[data-edit="ZERO-UI-TEST"]').count():
+            page.locator('[data-edit="ZERO-UI-TEST"]').click()
+        else:
+            page.locator('[data-simple-open="ZERO-UI-TEST"]').click()
+            page.locator('#simple-costs').click()
         page.locator('#amount-0').click()
         expect(page.locator('#amount-0')).to_have_value('25.5')
         page.locator('#amount-1').click()
