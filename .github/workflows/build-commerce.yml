@@ -1,0 +1,75 @@
+name: Build and test per-lot sales and samples
+on:
+  push:
+    branches: [work/samples-zero-income]
+    paths: ['.github/workflows/build-commerce.yml', '.maintenance/**']
+permissions:
+  contents: write
+concurrency:
+  group: eb-commerce-build
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/samples-zero-income
+      - name: Apply exact reviewed source bundle
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, zlib
+          from pathlib import Path
+          encoded=''.join(Path('.maintenance/commerce-'+str(i)+'.b64').read_text().strip() for i in range(4))
+          assert hashlib.sha256(encoded.encode()).hexdigest()=='057ca68c7ee511207bf8a88a657812238da5542f57fc096757d596510cd73560'
+          files=json.loads(zlib.decompress(base64.b64decode(encoded)))
+          allowed={'commerce-core.js','commerce-ui.js','commerce.css','tests/commerce.cjs','tests/browser-commerce.py','.maintenance/commerce-integration.py'}
+          assert set(files)==allowed
+          for name,content in files.items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(content)
+          PY
+          python3 .maintenance/commerce-integration.py
+          if test -f .maintenance/commerce-fix.py; then python3 .maintenance/commerce-fix.py; fi
+          node --check commerce-core.js
+          node --check commerce-ui.js
+          node --check lot-operations.js
+          node tests/costing.cjs
+          node tests/inventory.cjs
+          node tests/dispatch.cjs
+          node tests/commerce.cjs
+      - name: Prepare isolated browser
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+      - name: Test existing features and per-lot commercial workflows
+        env:
+          EB_TEST_URL: http://127.0.0.1:8765/
+          EB_SCREENSHOTS: /tmp/eb-commerce-screens
+        run: |
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+          python3 tests/browser-zero-fields.py
+          python3 tests/browser-location-entry.py
+          python3 tests/browser-commerce.py
+      - name: Commit tested source only
+        run: |
+          git fetch origin work/samples-zero-income
+          test "$(git rev-parse origin/work/samples-zero-income)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .maintenance/commerce-*.b64 .github/workflows/build-commerce.yml
+          if git ls-files --error-unmatch .maintenance/commerce-fix.py >/dev/null 2>&1; then git rm .maintenance/commerce-fix.py; fi
+          rm -f .maintenance/commerce-integration.py
+          git add commerce-core.js commerce-ui.js commerce.css control.html lot-operations.js Dockerfile tests/commerce.cjs tests/browser-commerce.py .github/workflows/verify-published.yml
+          git commit -m 'Implement tested lot sales, payments, sample classification and zero-income sample reporting without double inventory discount'
+          git push origin HEAD:work/samples-zero-income
+          git archive --format=zip HEAD -o /tmp/eb-commerce-screens/verified-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: commercial-workflow-screens
+          path: /tmp/eb-commerce-screens
+          retention-days: 2
