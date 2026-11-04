@@ -2,7 +2,7 @@ name: Verify editable lot records
 on:
   push:
     branches: [work/edit-delete-lots, main]
-    paths: ['.github/workflows/edit-delete-check.yml', '.maintenance/editable-*.b64', 'corrections*', 'control*', 'simple-lot.js', 'lot-operations.js', 'Dockerfile', 'tests/browser-corrections.py', 'tests/corrections.cjs']
+    paths: ['.github/workflows/edit-delete-check.yml', '.maintenance/editable-*.b64', 'corrections*', 'control*', 'simple-lot.js', 'lot-operations.js', 'Dockerfile', 'tests/**']
 permissions:
   contents: write
 concurrency:
