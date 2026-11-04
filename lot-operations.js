@@ -40,11 +40,7 @@
     const foot=document.querySelector('.cost-foot');if(foot)foot.textContent='0 = sin costo. Los costos por caja y pallet se prorratean por capacidad. Para un flete o pallet cobrado completo, captura el importe real con base «Lote». No se agregan impuestos.';
     refreshOverview();
   };
-  saveLot=function(){
-    try{readDraft();const latest=freshData(),before=latest.lots.find(l=>l.id===draft.editId),b=I.opening(latest,draft.editId),p=production(draft);
-    if(before&&b&&(before.p!==draft.p||Number(before.ml)!==Number(draft.ml)||Number(before.bottles)!==p.n)){by('form-errors').textContent='Este lote ya tiene inventario inicial. No cambies variedad, presentación o producción desde el costeo; conserva la trazabilidad.';by('form-errors').classList.remove('hidden');return;}
-    base.saveLot();}catch(e){by('form-errors').textContent=e.message;by('form-errors').classList.remove('hidden');}
-  };
+  saveLot=function(){base.saveLot();};
   setNav=function(){base.setNav();['nav-warehouses','mobile-warehouses'].forEach(id=>by(id)?.classList.toggle('active',view==='warehouses'));if(view==='stock'){by('nav-lots').classList.add('active');by('mobile-lots').classList.add('active');}};
   drawLots=function(){base.drawLots();document.querySelectorAll('.saved-lot').forEach(card=>{const id=card.querySelector('[data-edit]').dataset.edit,b=savedBalance(id),btn=document.createElement('button');btn.className='secondary stock-action';btn.textContent=b.configured?'Inventario y envíos':'Registrar dónde está';btn.onclick=()=>renderStock(id);card.querySelector('.actions').append(btn);const saleButton=document.createElement('button');saleButton.className='secondary';saleButton.textContent='Ventas y muestras';saleButton.onclick=()=>window.EBCommerceUI.render(id);card.querySelector('.actions').append(saleButton);const note=document.createElement('p');note.textContent=b.configured?number(b.total)+' botellas en bodegas · '+number(b.transit)+' en tránsito':'Inventario actual pendiente de capturar';card.children[1].append(note);});};
   function write(action){
