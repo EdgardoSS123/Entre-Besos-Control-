@@ -18,7 +18,7 @@
   function savedBalance(id){try{return I.balance(data,id);}catch(e){return{configured:false,error:e.message};}}
   function refreshOverview(){
     if(by('pack-description')){const p=production(draft);by('pack-description').textContent=p.valid?packText(p.n,!!draft.allowHalf):'El acomodo se calcula al capturar la producción.';}
-    if(by('overview-stock')){const b=savedBalance(draft.editId);by('overview-stock').textContent=b.configured?number(b.total)+' bot.':'Sin capturar';by('overview-stock-note').textContent=b.configured?(b.transit?number(b.transit)+' en tránsito':b.complete?'Conteo completo':'Conteo parcial'):'El costeo no crea existencias';}
+    if(by('overview-stock')){const b=savedBalance(draft.editId);by('overview-stock').textContent=b.configured?number(b.total)+' bot.':'Sin capturar';by('overview-stock-note').textContent=b.configured?(b.transit?number(b.transit)+' en tránsito':b.complete?'Conteo completo':'Conteo parcial'):(draft.originWarehouse?'Al guardar se registra en '+draft.originWarehouse:'Elige la bodega de origen');}
     if(by('open-lot-stock'))by('open-lot-stock').disabled=!draft.editId;
   }
   update=function(){base.update();refreshOverview();};

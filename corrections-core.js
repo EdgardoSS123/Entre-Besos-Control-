@@ -25,8 +25,9 @@
     if(!newId||newId.length>80)fail('Escribe el código del lote (máximo 80 caracteres).');
     if((d.lots||[]).some(l=>l.id!==id&&String(l.id).toLocaleLowerCase()===newId.toLocaleLowerCase()))fail('Ya existe otro lote con ese código. No se combinaron los registros.');
     if(!Number.isInteger(record.p)||record.p<0||record.p>2||!Number.isSafeInteger(record.bottles)||record.bottles<1||!Number.isFinite(record.unitCost)||record.unitCost<0||!Number.isFinite(record.ml)||record.ml<=0)fail('Revisa los datos y el cálculo del lote.');
-    const next=copy(d);if(newId!==id)for(const [k,arr] of Object.entries(next)){if(k==='editHistory'||k==='lots'||!Array.isArray(arr))continue;for(const item of arr){if(item.lotId===id)item.lotId=newId;if(item.lot===id)item.lot=newId;}}
+    let next=copy(d);if(newId!==id)for(const [k,arr] of Object.entries(next)){if(k==='editHistory'||k==='lots'||!Array.isArray(arr))continue;for(const item of arr){if(item.lotId===id)item.lotId=newId;if(item.lot===id)item.lot=newId;}}
     next.lots[next.lots.findIndex(l=>l.id===id)]={...copy(record),id:newId};
+    if(I.withOrigin&&Object.hasOwn(record,'originWarehouse'))next=I.withOrigin(next,newId,record.originWarehouse,meta.date||String(meta.stamp).slice(0,10),meta.stamp);
     (next.lotRevisions=next.lotRevisions||[]).push({lotId:newId,replacedAt:meta.stamp,record:copy(old)});
     return finish(d,next,[...new Set([id,newId])],'Editar lote '+id+(id!==newId?' → '+newId:''),meta);
   }

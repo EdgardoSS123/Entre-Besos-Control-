@@ -10,9 +10,12 @@ COPY simple-core.js simple-lot.js ./
 COPY tests/simple-lot.cjs ./tests/
 RUN node --check simple-core.js && node --check simple-lot.js && node tests/simple-lot.cjs
 
-COPY corrections-core.js corrections-ui.js ./
+COPY origin-core.js corrections-core.js corrections-ui.js ./
 COPY tests/corrections.cjs ./tests/
 RUN node --check corrections-core.js && node --check corrections-ui.js && node tests/corrections.cjs
+
+COPY tests/origin.cjs ./tests/
+RUN node --check origin-core.js && node tests/origin.cjs
 
 FROM nginx:alpine
 # Preserve previous modules and data keys. Publish the tested lot workspace.
@@ -24,10 +27,10 @@ COPY --from=verify /verify/inventory-core.js /verify/lot-operations.js /verify/c
 COPY --from=verify /verify/control.js /usr/share/nginx/html/control.js
 COPY ["EB logo.jpg", "EB espadin.jpg", "EB Cup.jpg", "EB DB.jpg", "/usr/share/nginx/html/"]
 COPY simple-core.js simple-lot.js simple-lot.css /usr/share/nginx/html/
-COPY corrections-core.js corrections-ui.js corrections.css /usr/share/nginx/html/
+COPY origin-core.js corrections-core.js corrections-ui.js corrections.css /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN set -eu; nginx; \
-    for asset in corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
+    for asset in origin-core.js corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
       wget -q -O /tmp/eb-resource "http://127.0.0.1/$asset"; \
       test -s /tmp/eb-resource; \
       echo "HTTP 200 VERIFIED: $asset"; \

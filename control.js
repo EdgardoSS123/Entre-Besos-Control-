@@ -12,7 +12,7 @@ const number=n=>new Intl.NumberFormat('es-MX',{maximumFractionDigits:6}).format(
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 let data,rawOriginal=null,storageError='',view='editor',draft,dirty=false,timer=null,loadedRevision=null;
 try{rawOriginal=localStorage.getItem(KEY);data=rawOriginal?JSON.parse(rawOriginal):{lots:[],moves:[],contacts:[],costs:{}};if(!data||typeof data!=='object'||!Array.isArray(data.lots)||!Array.isArray(data.moves))throw Error('Formato no reconocido');}catch(e){storageError='No se pudieron leer los registros. No se borraron. Exporta un respaldo antes de continuar.';data={lots:[],moves:[],contacts:[],costs:{}};}
-function blank(){return{id:'',p:0,date:today(),ml:720,producedLiters:'',lossLiters:0,productionMode:'liters',bottles:'',liquid:'',boxSize:6,palletSize:600,legacyExtra:0,editId:null,lines:NAMES.map((name,i)=>({name,amount:0,basis:BASES[i]}))};}
+function blank(){return{id:'',p:0,date:today(),ml:720,producedLiters:'',lossLiters:0,productionMode:'liters',bottles:'',liquid:'',boxSize:6,palletSize:600,legacyExtra:0,editId:null,originWarehouse:'',lines:NAMES.map((name,i)=>({name,amount:0,basis:BASES[i]}))};}
 function validDraft(d){return d&&typeof d==='object'&&Number.isInteger(d.p)&&d.p>=0&&d.p<3&&Array.isArray(d.lines)&&d.lines.length===13&&d.lines.every(x=>x&&Object.hasOwn(UNITS,x.basis))&&typeof d.id==='string';}
 function migrateDraft(d){
   if(d.productionMode==='liters')return d;
@@ -44,7 +44,7 @@ function requirements(d,p){
   if(Number.isInteger(pallet)&&pallet>0)pieces.push({name:'Pallets',quantity:Math.ceil(p.n/pallet),unit:'pallets',basis:pallet+' botellas por pallet'});
   return pieces;
 }
-function readDraft(){if(!$('lot-id'))return;draft.id=$('lot-id').value.trim();draft.date=$('lot-date').value;['ml','producedLiters','lossLiters','liquid','boxSize','palletSize'].forEach(k=>draft[k]=$(k).value);draft.productionMode='liters';draft.lines=NAMES.map((name,i)=>({name,amount:$('amount-'+i).value,basis:$('basis-'+i).value}));const p=production(draft);draft.bottles=p.valid?p.n:'';}
+function readDraft(){if(!$('lot-id'))return;draft.id=$('lot-id').value.trim();draft.date=$('lot-date').value;if($('lot-origin'))draft.originWarehouse=$('lot-origin').value;['ml','producedLiters','lossLiters','liquid','boxSize','palletSize'].forEach(k=>draft[k]=$(k).value);draft.productionMode='liters';draft.lines=NAMES.map((name,i)=>({name,amount:$('amount-'+i).value,basis:$('basis-'+i).value}));const p=production(draft);draft.bottles=p.valid?p.n:'';}
 function calc(d){
   const p=production(d),n=p.n,ml=Number(d.ml),price=Number(d.liquid),errors=[...p.errors];
   if(p.valid&&n<1)errors.push('El líquido disponible no alcanza para una botella completa.');
@@ -74,13 +74,18 @@ function update(){
   document.querySelectorAll('.product').forEach((b,i)=>{b.classList.toggle('selected',i===draft.p);b.setAttribute('aria-pressed',String(i===draft.p));});
 }
 function field(id,label,value,extra=''){return'<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" value="'+esc(value)+'" '+extra+'></div>';}
+function originField(){
+  const locations=window.EBLedger.originLocations(data),value=draft.originWarehouse||'';
+  const hasHistory=!!draft.editId&&window.EBLedger.hasStockHistory(data,draft.editId);
+  return '<div class="field origin-editor-field"><label for="lot-origin">Bodega de origen</label><select id="lot-origin"><option value="">Elige la bodega</option>'+locations.map(n=>'<option value="'+esc(n)+'" '+(n===value?'selected':'')+'>'+esc(n==='CDMX'?'México · CDMX':n)+'</option>').join('')+'</select><small class="small-note">'+(hasHistory?'Cambiar el origen no mueve lo registrado. Usa Movimiento de bodega.':'Al guardar, las botellas calculadas quedan en esta bodega, una sola vez.')+'</small></div>';
+}
 function renderEditor(){
   view='editor';const p=PRODUCTS[draft.p];
   $('app').innerHTML=`<div class="heading"><div><div class="eyebrow">PRODUCTOS Y PRODUCCIÓN</div><h1>${draft.editId?'Editar lote':'Costos por lote'}</h1><p class="muted">Captura litros y merma. Las botellas se calculan solas.</p></div><button class="secondary" id="show-lots">${icon('lots')}Mis lotes</button></div>${storageError?'<div class="alert">'+esc(storageError)+'</div>':''}
   <div class="editor-grid"><div class="editor-left">
   <section class="card"><div class="card-head"><div class="section-title"><span class="step">01</span><h2>Identifica el lote</h2></div><span class="chip">${draft.editId?'Edición':'Nuevo registro'}</span></div><div class="card-body"><div class="fields">
   ${field('lot-id','LOTE *',draft.id,'type="text" class="lot-code" placeholder="Código del lote" maxlength="80" ')}${field('lot-date','Fecha de producción *',draft.date,'type="date"')}
-  </div><div class="product-label">Producto / variedad</div><div class="products">${PRODUCTS.map((x,i)=>'<button class="product '+(i===draft.p?'selected':'')+'" data-product="'+i+'" style="--accent:'+x.color+';--tint:'+x.tint+'" aria-pressed="'+(i===draft.p)+'"><img src="./'+x.photo+'" alt="Botella original '+x.name+'"><span><strong>'+x.name+'</strong><small>'+x.ml+' ml · editable</small></span></button>').join('')}</div></div></section>
+  </div>${originField()}<div class="product-label">Producto / variedad</div><div class="products">${PRODUCTS.map((x,i)=>'<button class="product '+(i===draft.p?'selected':'')+'" data-product="'+i+'" style="--accent:'+x.color+';--tint:'+x.tint+'" aria-pressed="'+(i===draft.p)+'"><img src="./'+x.photo+'" alt="Botella original '+x.name+'"><span><strong>'+x.name+'</strong><small>'+x.ml+' ml · editable</small></span></button>').join('')}</div></div></section>
   <section class="card"><div class="card-head"><div class="section-title"><span class="step">02</span><h2>Producción y envasado</h2></div><span class="small-note">De este lote</span></div><div class="card-body">
   <div class="fields production-inputs">${field('producedLiters','Litros producidos *',draft.producedLiters,'type="number" inputmode="decimal" min="0.000001" step="any" placeholder="Antes de la merma"')}${field('lossLiters','Merma al envasar (litros)',draft.lossLiters,'type="number" inputmode="decimal" min="0" step="any" aria-describedby="loss-percentage"')}${field('ml','Presentación (ml) *',draft.ml,'type="number" inputmode="decimal" min="0.001" step="any"')}</div>
   <div class="small-note loss-help">Escribe litros perdidos, no porcentaje. <span id="loss-percentage"></span></div>
@@ -119,19 +124,19 @@ function saveLot(){
   let latest,raw,before={};try{raw=localStorage.getItem(KEY);latest=freshData();if(draft.editId){before=latest.lots.find(l=>l.id===draft.editId);if(!before)errors.push('No se encontró el lote original.');else if(JSON.stringify(before)!==loadedRevision)errors.push('Este lote cambió en otra pestaña. Vuelve a abrirlo antes de guardar.');}if(latest.lots.some(l=>l.id!==draft.editId&&String(l.id).trim().toLowerCase()===draft.id.toLowerCase()))errors.push('Este LOTE ya existe. Usa otro código o abre el original.');}catch(e){errors.push('No se pudo leer la información guardada.');}
   const showErrors=e=>{$('form-errors').textContent=e;$('form-errors').classList.remove('hidden');$('form-errors').scrollIntoView({block:'center',behavior:'smooth'});};
   if(errors.length){showErrors(errors.join(' '));return;}
-  const record={...before,id:draft.id,p:draft.p,date:draft.date,ml:r.ml,bottles:r.n,producedLiters:p.gross,lossLiters:p.loss,netLiters:p.net,bottledLiters:p.bottled,remainingLiters:p.remainder,liters:p.consumed,liquid:r.price,boxSize:Number(draft.boxSize),palletSize:Number(draft.palletSize),components:draft.lines.map(x=>Number(x.amount)),costLines:r.rows,includeLoss:p.loss>0,productionMode:'liters',materialsPlan:r.materials,materialsStatus:'requirements_only',legacyExtra:Number(draft.legacyExtra||0),totalCost:r.total,unitCost:r.unit,costingVersion:4,updatedAt:new Date().toISOString()};
+  const record={...before,id:draft.id,p:draft.p,date:draft.date,originWarehouse:draft.originWarehouse||'',ml:r.ml,bottles:r.n,producedLiters:p.gross,lossLiters:p.loss,netLiters:p.net,bottledLiters:p.bottled,remainingLiters:p.remainder,liters:p.consumed,liquid:r.price,boxSize:Number(draft.boxSize),palletSize:Number(draft.palletSize),components:draft.lines.map(x=>Number(x.amount)),costLines:r.rows,includeLoss:p.loss>0,productionMode:'liters',materialsPlan:r.materials,materialsStatus:'requirements_only',legacyExtra:Number(draft.legacyExtra||0),totalCost:r.total,unitCost:r.unit,costingVersion:4,updatedAt:new Date().toISOString()};
   try{
-    if(draft.editId)latest=window.EBLedger.correctLot(latest,draft.editId,record,loadedRevision,{id:crypto.randomUUID(),stamp:record.updatedAt});
-    else{record.createdAt=record.updatedAt;latest.lots.push(record);}
+    if(draft.editId)latest=window.EBLedger.correctLot(latest,draft.editId,record,loadedRevision,{id:crypto.randomUUID(),stamp:record.updatedAt,date:today()});
+    else{record.createdAt=record.updatedAt;latest.lots.push(record);if(record.originWarehouse)latest=window.EBLedger.withOrigin(latest,record.id,record.originWarehouse,today(),record.updatedAt);}
     if(localStorage.getItem(KEY)!==raw)throw Error('Otra pestaña cambió los datos. Vuelve a abrir el lote.');
     if(rawOriginal&&!localStorage.getItem('eb-before-costos-v3'))localStorage.setItem('eb-before-costos-v3',rawOriginal);
     localStorage.setItem(KEY,JSON.stringify(latest));data=latest;draft.editId=record.id;loadedRevision=JSON.stringify(latest.lots.find(l=>l.id===record.id));draft.sourceRevision=loadedRevision;saveDraft();dirty=false;
-    toast('Lote '+record.id+' guardado · '+number(r.n)+' botellas · '+cash(record.unitCost));renderLots();window.scrollTo(0,0);
+    toast('Lote '+record.id+' guardado · '+number(r.n)+' botellas · '+cash(record.unitCost));renderLots();if(record.originWarehouse&&window.EBSimpleUI)window.EBSimpleUI.open(record.id,'move',record.originWarehouse);window.scrollTo(0,0);
   }catch(e){showErrors('No se pudo guardar. '+e.message);}
 }
 
 function fromLot(l,copy){
-  const d=blank();d.id=copy?'':String(l.id);d.editId=copy?null:String(l.id);d.sourceRevision=copy?null:JSON.stringify(l);d.p=Number.isInteger(l.p)&&PRODUCTS[l.p]?l.p:0;d.date=copy?today():(l.date||today());d.ml=l.ml||PRODUCTS[d.p].ml;d.bottles=l.bottles??'';d.liquid=l.liquid??'';d.boxSize=l.boxSize||6;d.palletSize=l.palletSize||600;d.legacyExtra=l.legacyExtra||0;
+  const d=blank();d.id=copy?'':String(l.id);d.editId=copy?null:String(l.id);d.sourceRevision=copy?null:JSON.stringify(l);d.p=Number.isInteger(l.p)&&PRODUCTS[l.p]?l.p:0;d.date=copy?today():(l.date||today());d.ml=l.ml||PRODUCTS[d.p].ml;d.bottles=l.bottles??'';d.liquid=l.liquid??'';d.boxSize=l.boxSize||6;d.palletSize=l.palletSize||600;d.legacyExtra=l.legacyExtra||0;d.originWarehouse=l.originWarehouse||'';
   if(l.productionMode==='liters'&&Number.isFinite(l.producedLiters)){d.producedLiters=l.producedLiters;d.lossLiters=l.lossLiters??0;}
   else{const nominal=Number(d.bottles)*Number(d.ml)/1000,include=l.includeLoss??(Number(l.liters)>nominal+1e-7),loss=include?Math.max(0,Number(l.liters||0)-nominal):0;d.producedLiters=nominal>0?Number((nominal+loss).toFixed(6)):'';d.lossLiters=Number(loss.toFixed(6));d.migrationNote='Registro anterior: litros y merma inferidos de las botellas guardadas. Confirma las cantidades; el original se conserva al editar.';}
   if(l.costingVersion>=3&&Array.isArray(l.costLines)&&l.costLines.length===13)d.lines=l.costLines.map((x,i)=>({name:NAMES[i],amount:x.amount??0,basis:Object.hasOwn(UNITS,x.basis)?x.basis:BASES[i]}));

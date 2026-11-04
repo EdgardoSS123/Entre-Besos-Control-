@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101827"><meta name="apple-mobile-web-app-capable" content="yes"><title>Entre Besos · Costos por lote</title><link rel="stylesheet" href="./control.css?v=31"><link rel="stylesheet" href="./production.css?v=32"><link rel="stylesheet" href="./lot-operations.css?v=mini1"><link rel="stylesheet" href="./commerce.css?v=1"><link rel="stylesheet" href="./simple-lot.css?v=1"><link rel="stylesheet" href="./corrections.css?v=1"></head><body>
-<aside class="sidebar"><div class="brand"><img src="./EB%20logo.jpg" alt="Entre Besos · Mezcal artesanal"></div><div class="label">CONTROL INTERNO</div><nav class="side-nav"><button id="nav-editor" class="active" data-view="editor"></button><button id="nav-lots" data-view="lots"></button><button id="backup-nav"></button></nav><div class="sidebar-footer"><strong>Un lote, un costo.</strong>Los cambios en un lote no modifican los demás.<a href="./legacy.html">Otros módulos · versión anterior ↗</a><div style="margin-top:15px;font-size:10px">SAGAV CUATRO<br>Control · Edición y borrado recuperable</div></div></aside>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101827"><meta name="apple-mobile-web-app-capable" content="yes"><title>Entre Besos · Costos por lote</title><link rel="stylesheet" href="./control.css?v=31"><link rel="stylesheet" href="./production.css?v=32"><link rel="stylesheet" href="./lot-operations.css?v=mini1"><link rel="stylesheet" href="./commerce.css?v=1"><link rel="stylesheet" href="./simple-lot.css?v=origin1"><link rel="stylesheet" href="./corrections.css?v=1"></head><body>
+<aside class="sidebar"><div class="brand"><img src="./EB%20logo.jpg" alt="Entre Besos · Mezcal artesanal"></div><div class="label">CONTROL INTERNO</div><nav class="side-nav"><button id="nav-editor" class="active" data-view="editor"></button><button id="nav-lots" data-view="lots"></button><button id="backup-nav"></button></nav><div class="sidebar-footer"><strong>Un lote, un costo.</strong>Los cambios en un lote no modifican los demás.<a href="./legacy.html">Otros módulos · versión anterior ↗</a><div style="margin-top:15px;font-size:10px">SAGAV CUATRO<br>Control · Bodega de origen</div></div></aside>
 <div class="workspace"><header class="topbar"><div class="crumb">Entre Besos Control <span style="margin:0 9px;color:#b7bfcd">/</span><b>Productos y lotes</b></div><div class="mobile-brand"><img src="./EB%20logo.jpg" alt="Entre Besos"><b>CONTROL<br>INTERNO</b></div><div class="controls-row"><span class="chip"><i></i>Datos en este navegador</span><button class="secondary" id="backup-top"></button></div></header><main class="page" id="app"></main></div>
 <nav class="mobile-nav"><button id="mobile-editor" class="active" data-view="editor"></button><button id="mobile-lots" data-view="lots"></button><button id="backup-mobile"></button></nav><div class="mobile-save hidden" id="mobile-save"><div><small>Costo por botella · MXN</small><strong id="mobile-total">—</strong></div><button class="primary" id="mobile-save-button">Guardar lote</button></div><div id="toast" class="toast hidden" role="status"></div><section id="print-view" class="print-view"></section>
-<script src="./inventory-core.js?v=simple1" defer></script><script src="./commerce-core.js?v=simple1" defer></script><script src="./simple-core.js?v=1" defer></script><script src="./corrections-core.js?v=1" defer></script><script src="./control.js?v=editable1" defer></script><script src="./lot-operations.js?v=editable1" defer></script><script src="./commerce-ui.js?v=simple1" defer></script><script id="zero-on-edit">
+<script src="./inventory-core.js?v=simple1" defer></script><script src="./commerce-core.js?v=simple1" defer></script><script src="./simple-core.js?v=1" defer></script><script src="./origin-core.js?v=1" defer></script><script src="./corrections-core.js?v=origin1" defer></script><script src="./control.js?v=origin1" defer></script><script src="./lot-operations.js?v=editable1" defer></script><script src="./commerce-ui.js?v=simple1" defer></script><script id="zero-on-edit">
 /* Clear an existing zero only while editing. Keep calculations and saved lots unchanged. */
 (function () {
   'use strict';
@@ -78,7 +78,7 @@
       const button = document.getElementById('open-lot-stock');
       if (!button) return;
       button.disabled = !!storageError;
-      button.textContent = draft.editId ? 'Guardar y abrir inventario →' : 'Guardar y registrar ubicación →';
+      button.textContent = draft.originWarehouse ? 'Guardar y mover producto →' : (draft.editId ? 'Guardar y abrir lote →' : 'Guardar y registrar ubicación →');
       button.title = 'Guarda los costos y abre el inventario actual de este lote.';
       button.onclick = enterInventory;
       let help = document.getElementById('lot-entry-help');
@@ -89,7 +89,7 @@
         help.style.margin = '12px 0 0';
         button.closest('.lot-tabs').after(help);
       }
-      help.textContent = '1. Guarda los costos. 2. Indica qué queda en cada bodega. 3. Registra envíos o entregas por venta. La producción no se suma otra vez al inventario.';
+      help.textContent = draft.originWarehouse ? 'Lote → Bodega de origen → Movimiento de bodega. Cada botella se registra una sola vez.' : 'Elige Bodega de origen para registrar la producción ahí. También puedes capturar existencias actuales si no recuerdas el historial.';
     }
     update = function () { previousUpdate(); enhance(); };
     renderEditor = function () { previousRender(); enhance(); };
@@ -99,4 +99,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installLotEntryFlow, { once: true });
   else installLotEntryFlow();
 })();
-</script><script src="./simple-lot.js?v=editable1" defer></script><script src="./corrections-ui.js?v=1" defer></script></body></html>
+</script><script src="./simple-lot.js?v=origin1" defer></script><script src="./corrections-ui.js?v=1" defer></script></body></html>
