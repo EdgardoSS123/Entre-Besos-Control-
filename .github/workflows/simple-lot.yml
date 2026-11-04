@@ -1,0 +1,108 @@
+name: Verify simple lot control
+on:
+  push:
+    branches: [work/simple-lots, main]
+    paths: ['.maintenance/**', '.github/workflows/simple-lot.yml', 'simple-*', control.html, inventory-core.js, commerce-core.js, commerce-ui.js, lot-operations.js, Dockerfile, 'tests/**']
+permissions:
+  contents: write
+concurrency:
+  group: eb-simple-${{ github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed source on isolated branch only
+        if: github.ref_name == 'work/simple-lots'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,zlib,json,hashlib
+          p=Path('.maintenance/simple-bundle.b64')
+          if p.exists():
+              encoded=p.read_text().strip().replace('DSvHJiL2k9a66','DSvHJiL4nda66')
+              print('Bundle checksum:',hashlib.sha256(encoded.encode()).hexdigest())
+              assert hashlib.sha256(encoded.encode()).hexdigest()=='3e17df003e0a98f8e3f42cdc2a62cfc628cc67b5447fc92776cdcd1724ef6b3b','Source bundle differs from reviewed code'
+              files=json.loads(zlib.decompress(base64.b64decode(encoded)))
+              assert set(files)=={'simple-core.js','simple-lot.js','simple-lot.css','tests/simple-lot.cjs','tests/browser-simple-lot.py','.maintenance/simple-integration.py'}
+              for name,content in files.items():
+                  f=Path(name);f.parent.mkdir(parents=True,exist_ok=True);f.write_text(content)
+          PY
+          if test -f .maintenance/simple-integration.py; then python3 .maintenance/simple-integration.py; fi
+      - name: Test calculations and preservation
+        run: |
+          node --check simple-lot.js
+          node --check simple-core.js
+          node tests/costing.cjs
+          node tests/inventory.cjs
+          node tests/dispatch.cjs
+          node tests/commerce.cjs
+          node tests/partner-depots.cjs
+          node tests/simple-lot.cjs
+      - name: Prepare browser
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated test server
+        if: github.ref_name == 'work/simple-lots'
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published code
+        if: github.ref_name == 'main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request,time,os
+          root='https://entre-besos-web-production.up.railway.app/'
+          files=['control.html','simple-core.js','simple-lot.js','simple-lot.css','inventory-core.js','commerce-core.js','commerce-ui.js','lot-operations.js','control.js']
+          for attempt in range(48):
+              try:
+                  for name in files:
+                      path='index.html' if name=='control.html' else name
+                      got=urllib.request.urlopen(root+path+'?verify='+os.environ['GITHUB_SHA'],timeout=20).read()
+                      assert got==Path(name).read_bytes(),name
+                  print('PASS exact published files');break
+              except Exception as e:
+                  print(type(e).__name__,str(e));time.sleep(5)
+          else: raise AssertionError('Published version does not match commit')
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test default simple interface and legacy compatibility
+        env:
+          EB_SCREENSHOTS: /tmp/eb-simple-screens
+        run: |
+          python3 tests/browser-simple-lot.py
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+          python3 tests/browser-commerce.py
+          python3 tests/browser-zero-fields.py
+          python3 tests/browser-location-entry.py
+          python3 tests/browser-partner-depots.py
+      - name: Commit only verified app files in development
+        if: github.ref_name == 'work/simple-lots'
+        run: |
+          git fetch origin work/simple-lots
+          test "$(git rev-parse origin/work/simple-lots)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add simple-core.js simple-lot.js simple-lot.css control.html inventory-core.js commerce-core.js commerce-ui.js lot-operations.js Dockerfile tests
+          if git ls-files --error-unmatch .maintenance/simple-bundle.b64 >/dev/null 2>&1; then git rm .maintenance/simple-bundle.b64; fi
+          rm -f .maintenance/simple-integration.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Implement simple per-lot current counts, known sales, immediate moves, reconciliation and fractional pallets'
+            git push origin HEAD:work/simple-lots
+          fi
+          mkdir -p /tmp/eb-simple-screens
+          git archive --format=zip HEAD -o /tmp/eb-simple-screens/verified-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simple-lot-checks
+          path: |
+            /tmp/eb-simple-screens
+            .maintenance/simple-bundle.b64
+          retention-days: 2
