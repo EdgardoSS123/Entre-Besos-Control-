@@ -1,0 +1,140 @@
+name: Verify focused warehouse view
+on:
+  push:
+    branches: [work/warehouse-only-view, main]
+    paths: [lot-operations.js, control.html, tests/browser-warehouse-focus.py, tests/browser-partner-depots.py, .github/workflows/warehouse-focus.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove repeated directory on isolated branch
+        if: github.ref == 'refs/heads/work/warehouse-only-view'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,hashlib
+          p=Path('lot-operations.js');s=p.read_text()
+          if 'function partnerDepotDirectory()' in s:
+              raw=p.read_bytes()
+              assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='5ffb4a69df62b0fd9ed49476127ea85714a97f4f','Re-read changed source before applying'
+              a=s.index('  function partnerDepotDirectory(){')
+              b=s.index('  function renderWarehouses()',a)
+              s=s[:a]+s[b:]
+              assert s.count("+partnerDepotDirectory()+")==1
+              s=s.replace('+partnerDepotDirectory()+','+')
+              old="document.querySelectorAll('[data-partner-location]').forEach(btn=>btn.onclick=()=>{locationFilter=btn.dataset.partnerLocation;renderWarehouses();});"
+              assert s.count(old)==1
+              s=s.replace(old,'')
+              assert 'partnerDepotDirectory' not in s
+              p.write_text(s)
+              p=Path('control.html');s=p.read_text()
+              s,n=re.subn(r'(lot-operations\.js\?v=)[^\"\s]+',r'\g<1>warehouse-focus1',s)
+              assert n==1
+              p.write_text(s)
+              p=Path('tests/browser-partner-depots.py');s=p.read_text()
+              s=s.replace("assert page.locator('.partner-depot').count()==4", "assert page.locator('.partner-depot').count()==0")
+              s=s.replace("page.locator('[data-partner-location=\"'+DEPOTS[0]+'\"]').click()", "page.locator('#warehouse-filter').select_option(DEPOTS[0])")
+              s=s.replace("page.locator('[data-partner-location=\"'+dest+'\"]').click()", "page.locator('#warehouse-filter').select_option(dest)")
+              s=s.replace("page.locator('[data-partner-location=\"CDMX\"]').click()", "page.locator('#warehouse-filter').select_option('CDMX')")
+              assert 'data-partner-location' not in s
+              p.write_text(s)
+          PY
+      - name: Write warehouse view regression
+        if: github.ref == 'refs/heads/work/warehouse-only-view'
+        run: |
+          cat > tests/browser-warehouse-focus.py <<'PY'
+          """Read-only UI checks using synthetic data in isolated browser profiles."""
+          import os,shutil,json
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright,expect
+          URL=os.environ.get('EB_TEST_URL','http://127.0.0.1:8765/')
+          OUT=Path('/tmp/eb-warehouse-focus');OUT.mkdir(exist_ok=True)
+          PLACES=['Oaxaca','CDMX','USA','Singapur','EB1-1 · Edgardo','EB1-2 · Ricardo','EB1-3 · Mario']
+          COUNTS=[72,60,48,12,18,24,30]
+          fixture={'lots':[{'id':'CI-WAREHOUSE-FOCUS','p':0,'date':'2026-11-01','ml':720,'bottles':600,'unitCost':200,'totalCost':120000}], 'moves':[], 'contacts':[], 'costs':{}, 'inventoryOpenings':[{'lotId':'CI-WAREHOUSE-FOCUS','asOf':'2026-11-01','complete':True,'rows':[{'location':place,'tag':'Nacional','quantity':n,'sampleQuantity':0} for place,n in zip(PLACES,COUNTS)]}]}
+          with sync_playwright() as p:
+              browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
+              for width,height in [(1440,1000),(390,844),(375,812)]:
+                  ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
+                  page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                  page.goto(URL,wait_until='networkidle')
+                  page.evaluate('(data)=>localStorage.setItem("eb-v1",JSON.stringify(data))',fixture)
+                  before=page.evaluate('localStorage.getItem("eb-v1")')
+                  page.locator('#nav-warehouses' if width>950 else '#mobile-warehouses').click()
+                  for place,n in zip(PLACES,COUNTS):
+                      page.locator('#warehouse-filter').select_option(place)
+                      expect(page.locator('#warehouse-filter')).to_have_value(place)
+                      assert page.locator('.partner-depots,[data-partner-location]').count()==0
+                      expect(page.locator('.warehouse-card')).to_have_count(1)
+                      expect(page.locator('.warehouse-card > strong')).to_have_text(str(n))
+                      expect(page.locator('.warehouse-card > small')).to_have_text('botellas en '+place)
+                      assert all(x in page.locator('#warehouse-filter option').all_text_contents() for x in PLACES)
+                      assert page.evaluate('localStorage.getItem("eb-v1")')==before
+                      assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'), 'Horizontal overflow'
+                  page.locator('#warehouse-filter').select_option('Oaxaca')
+                  page.screenshot(path=str(OUT/f'warehouse-oaxaca-{width}.png'),full_page=True)
+                  page.reload(wait_until='networkidle')
+                  assert page.evaluate('localStorage.getItem("eb-v1")')==before
+                  assert not errors,errors
+                  print('PASS WAREHOUSE FOCUS',width,'selected location only; all 7 locations accessible; no repeated CDMX panel; no writes; reload and responsive layout')
+                  ctx.close()
+              browser.close()
+          PY
+      - name: Verify ledger and JavaScript
+        run: |
+          node --check lot-operations.js
+          for test in tests/*.cjs; do node "$test"; done
+      - name: Prepare browser
+        run: python3 -m pip install playwright==1.56.0
+      - name: Start isolated server
+        if: github.ref == 'refs/heads/work/warehouse-only-view'
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published files
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          expected={'lot-operations.js':Path('lot-operations.js').read_bytes(),'index.html':Path('control.html').read_bytes()}
+          for attempt in range(30):
+              try:
+                  good=all(urllib.request.urlopen(base+name+'?verify=warehouse-focus-'+str(time.time()),timeout=15).read()==data for name,data in expected.items())
+                  if good: break
+              except Exception: pass
+              time.sleep(4)
+          else: raise SystemExit('Published version does not match tested files')
+          print('Exact published warehouse view confirmed')
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test focused view and partner sales without user records
+        env:
+          EB_SCREENSHOTS: /tmp/eb-warehouse-focus
+        run: |
+          python3 tests/browser-warehouse-focus.py
+          python3 tests/browser-partner-depots.py
+      - name: Commit only verified application and tests
+        if: github.ref == 'refs/heads/work/warehouse-only-view'
+        run: |
+          git fetch origin work/warehouse-only-view
+          test "$(git rev-parse origin/work/warehouse-only-view)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lot-operations.js control.html tests/browser-partner-depots.py tests/browser-warehouse-focus.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Mostrar solo la bodega seleccionada; quitar directorio repetido de CDMX sin cambiar inventarios'
+            git push origin HEAD:work/warehouse-only-view
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: warehouse-focus-checks
+          path: /tmp/eb-warehouse-focus
+          retention-days: 2
