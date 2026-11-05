@@ -1,0 +1,59 @@
+name: Verify bottle prices and warehouse history
+on:
+  push:
+    branches: [work/sales-bottle-reconciliation, main]
+    paths: ['*.js', '*.css', '*.html', 'tests/**', '.maintenance/sales-history.py', '.github/workflows/sales-history.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed changes on isolated development branch
+        if: github.ref == 'refs/heads/work/sales-bottle-reconciliation'
+        run: if test -f .maintenance/sales-history.py; then python3 .maintenance/sales-history.py; fi
+      - name: Verify stock arithmetic and historical data preservation
+        run: |
+          for file in *.js; do node --check "$file"; done
+          for file in tests/*.cjs; do node "$file"; done
+      - name: Prepare isolated browser
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start test server
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+      - name: Verify editing, filtering, touch and existing workflows
+        env:
+          EB_TEST_URL: http://127.0.0.1:8765/
+          EB_SCREENSHOTS: /tmp/history-screens
+        run: |
+          python3 tests/browser-history-filter.py
+          python3 tests/browser-corrections.py
+          python3 tests/browser-simple-lot.py
+          python3 tests/browser-zero-fields.py
+          python3 tests/browser-commerce.py
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+      - name: Commit tested application source on development branch
+        if: github.ref == 'refs/heads/work/sales-bottle-reconciliation'
+        run: |
+          git fetch origin work/sales-bottle-reconciliation
+          test "$(git rev-parse origin/work/sales-bottle-reconciliation)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add *.js *.css *.html tests
+          if test -f .maintenance/sales-history.py; then git rm .maintenance/sales-history.py; fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'Guardar ventas con saldo negativo, precio por botella y filtrar historial por bodega'
+            git push origin HEAD:work/sales-bottle-reconciliation
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: history-review
+          path: /tmp/history-screens
+          retention-days: 2
