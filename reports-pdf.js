@@ -30,9 +30,9 @@
     doc.setProperties({title:'Entre Besos | '+clean(model.title),subject:clean(model.scope),author:'SAGAV Cuatro - Entre Besos',creator:'Entre Besos Control'});
     doc.setLineHeightFactor(1.3);let y=TOP;
     function room(height){if(y+height>BOTTOM){doc.addPage();y=TOP;}}
-    function paragraph(value,size=9,color=MUTED){
+    function paragraph(value,size=9,color=MUTED,gap=8){
       doc.setFont('helvetica','normal');doc.setFontSize(size);doc.setTextColor(...color);const lines=doc.splitTextToSize(clean(value),CW);
-      for(const line of lines){room(size*1.35+3);doc.text(line,M,y+size);y+=size*1.35;}y+=8;
+      for(const line of lines){room(size*1.35+3);doc.text(line,M,y+size);y+=size*1.35;}y+=gap;
     }
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...INK);const sub=doc.splitTextToSize(clean(model.subtitle),CW);doc.text(sub,M,y+13);y+=sub.length*17+5;
     paragraph('Alcance: '+model.scope,9);
@@ -54,9 +54,7 @@
         headStyles:{fillColor:INK,textColor:[255,255,255],fontStyle:'bold',fontSize:8.2,lineWidth:0},alternateRowStyles:{fillColor:[247,249,252]},columnStyles:styles});
       y=doc.lastAutoTable.finalY+20;
     }
-    room(50);doc.setDrawColor(...LINE);doc.line(M,y,W-M,y);y+=12;
-    for(const note of model.notes)paragraph(note,8);
-    paragraph('Información guardada en este navegador al generar el documento. No incluye capturas sin guardar. Control interno; no es una factura ni un conteo físico certificado.',8);
+    if(model.notes.length){room(50);doc.setDrawColor(...LINE);doc.line(M,y,W-M,y);y+=12;for(const note of model.notes)paragraph(note,8,MUTED,4);}
     const count=doc.getNumberOfPages();
     for(let p=1;p<=count;p++){
       doc.setPage(p);doc.addImage(image,'JPEG',M+(84-iw)/2,24+(58-ih)/2,iw,ih,'eb-logo');
@@ -65,7 +63,7 @@
       doc.setFont('helvetica','normal');doc.setTextColor(...MUTED);doc.setFontSize(8.5);doc.text(clean('Generado: '+date+' · CDMX'),140,74);
       doc.setDrawColor(...PINK);doc.setLineWidth(1.5);doc.line(M,94,W-M,94);
       doc.setLineWidth(.5);doc.setDrawColor(...LINE);doc.line(M,H-35,W-M,H-35);
-      doc.setFontSize(7.5);doc.setTextColor(...MUTED);doc.text('ENTRE BESOS  |  Confidencial · Uso de socios',M,H-21);doc.text('Página '+p+' de '+count,W-M,H-21,{align:'right'});
+      doc.setFontSize(7.5);doc.setTextColor(...MUTED);doc.text('ENTRE BESOS  |  Confidencial · Datos locales guardados · No es factura',M,H-21);doc.text('Página '+p+' de '+count,W-M,H-21,{align:'right'});
     }
     const slug=clean(model.file).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80);
     const localDate=generated.toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'});
