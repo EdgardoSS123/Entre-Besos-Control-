@@ -52,7 +52,8 @@ jobs:
                 if(!l)return;
                 let b;try{b=window.EBLedger.reconciliation(data,id);}catch(e){b={configured:false,error:e.message};}
                 card.dataset.lotSummary=id;
-                const label=document.createElement('span');label.className='lot-card-cost-label';label.textContent='COSTO POR BOTELLA';card.querySelector('.price').before(label);
+                const label=document.createElement('span');label.className='lot-card-cost-label';label.textContent='COSTO POR BOTELLA';
+                const price=card.querySelector('.price'),cost=document.createElement('div');cost.className='lot-card-cost';price.before(cost);cost.append(label,price);
                 const info=card.children[1],meta=info.querySelector('p');if(meta)meta.textContent=(l.date||'Fecha pendiente')+' · '+(l.ml||'—')+' ml';
                 const btn=document.createElement('button');btn.className='secondary stock-action';btn.textContent=b.configured?'Inventario y envíos':'Registrar dónde está';btn.onclick=()=>renderStock(id);card.querySelector('.actions').append(btn);
                 const saleButton=document.createElement('button');saleButton.className='secondary';saleButton.textContent='Ventas y muestras';saleButton.onclick=()=>window.EBCommerceUI.render(id);card.querySelector('.actions').append(saleButton);
@@ -62,7 +63,7 @@ jobs:
               p.write_text(s[:start]+replacement+s[end:])
               p=Path('lot-operations.css');s=p.read_text()
               s+='''\n/* Read-only lot cards: production is not the opening or current inventory. */
-          .saved-lot .lot-card-cost-label{display:block;font-size:10px;font-weight:750;letter-spacing:.06em;color:#52617b;line-height:1.5;margin-bottom:5px;text-align:right}
+          .saved-lot .lot-card-cost{min-width:0}.saved-lot .lot-card-cost-label{display:block;font-size:10px;font-weight:750;letter-spacing:.06em;color:#52617b;line-height:1.5;margin-bottom:5px;text-align:right}
           .lot-card-summary{margin-top:12px}.lot-card-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.lot-card-metric{min-width:0;background:#f5f7fb;border-radius:10px;padding:10px 12px}.lot-card-metric[data-summary="current"]{background:#eef7f3}.lot-card-metric>span,.lot-card-metric>small{display:block;font-size:11px;line-height:1.5;color:#52617b}.lot-card-metric>strong{display:block;font-size:23px;line-height:1.25;color:var(--ink);font-variant-numeric:tabular-nums;margin:3px 0}.lot-card-metric>small{font-size:10px;overflow-wrap:anywhere}.saved-lot .lot-card-activity{margin:8px 0 0;font-size:11px}.saved-lot .lot-card-warning{font-size:11px;color:#946013;margin-top:6px}.lot-card-calculation{margin-top:8px}.lot-card-calculation>summary{font-size:12px;cursor:pointer;min-height:36px;display:list-item;padding:8px 0;color:#52617b}.lot-card-calculation dl{font-size:11px;margin:0;padding:10px;background:#f8fafc;border-radius:8px}.lot-card-calculation dl>div{display:flex;justify-content:space-between;gap:12px;padding:4px 0}.lot-card-calculation dt{min-width:0}.lot-card-calculation dd{margin:0;white-space:nowrap;font-variant-numeric:tabular-nums}.lot-card-calculation dl>div:last-child{font-weight:750;border-top:1px solid var(--line);margin-top:5px;padding-top:8px}.lot-card-calculation .small-note{font-size:10px;line-height:1.6}
           @media(max-width:700px){.saved-lot .lot-card-cost-label{text-align:inherit;font-size:10px}.lot-card-metrics{gap:7px}.lot-card-metric{padding:9px}.lot-card-metric>strong{font-size:22px}.lot-card-calculation>summary{min-height:44px}.lot-card-summary{margin-bottom:8px}}
           '''
