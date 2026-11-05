@@ -5,3 +5,38 @@
 .metric-unit{font-size:11px;color:#64748b;display:block}.metric-cases{display:block;font-size:12px;color:#334155;margin-top:8px;line-height:1.5}.case-rule{font-size:11px;color:#66758a;margin:14px 0 8px}.reconciliation-line{padding:12px 14px;border-radius:10px;background:#f5f7fb;font-size:12px;display:flex;flex-wrap:wrap;gap:6px 14px}.reconciliation-line small{width:100%;line-height:1.5;color:#52637c}.reconciliation-line.difference{background:#fff4df}.reconciliation-line.balanced{background:#e9f6ef}.origin-field{margin-top:18px}.origin-field small{display:block;line-height:1.6;margin-top:7px}.simple-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.simple-tabs button{min-width:0;padding:8px}.simple-location-grid .simple-location{width:100%}@media(max-width:700px){.simple-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-cases{font-size:11px}}
 
 .sample-flag{margin:14px 0;padding:12px 14px;background:#fff5fa;border:1px solid #f3d5e6;border-radius:12px;color:#682349;font-weight:600}.sample-flag input{width:19px;height:19px;accent-color:var(--pink,#d90074)}#simple-form [hidden]{display:none!important}
+
+
+/* Mobile workspace: compact summary and actions that never cover the content. */
+.simple-overview-details>summary{cursor:pointer;color:#52637c;font-size:13px;padding:12px 0;min-height:44px}
+@media(min-width:701px){.simple-overview-details>summary{display:none}}
+@media(max-width:700px){
+  .page:has(.simple-overview){padding:18px 16px calc(90px + env(safe-area-inset-bottom))}
+  .page:has(.simple-overview)>.heading{display:block;margin-bottom:14px}
+  .simple-header-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px}
+  .simple-header-actions .secondary{width:100%;margin:0;padding:9px 4px;font-size:12px;min-height:44px}
+  .simple-overview{padding:12px;margin-bottom:12px}
+  .simple-metrics{gap:8px}
+  .simple-metrics>div{padding:10px 12px}
+  .simple-metrics small{font-size:12px;line-height:1.35}
+  .simple-metrics strong{font-size:25px;margin-top:3px;line-height:1.2}
+  .simple-metrics .metric-unit,.simple-metrics .metric-cases{display:none}
+  .simple-overview-details .case-rule{margin-top:0}
+  .simple-overview-details .simple-account-note{margin:8px 0 12px;line-height:1.6}
+  .reconciliation-line{padding:10px 12px;gap:4px 10px}
+  .reconciliation-line>span{display:none}
+  .simple-tabs{position:static;top:auto;z-index:auto;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0;padding:0;background:transparent}
+  .simple-tabs button{min-height:48px;font-size:14px;margin:0}
+  #simple-form{scroll-margin-top:16px}
+  #simple-form .card-head,#simple-form .card-body{padding:16px}
+  .simple-location-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+  .simple-location{padding:14px 16px;gap:5px;min-height:105px}
+  .simple-location>span{font-size:15px}
+  .simple-location>b{font-size:27px}
+  .simple-location small{font-size:12px}
+  .stock-record-actions{padding:8px 12px;gap:8px;flex-wrap:wrap}
+  .stock-record-actions>.record-buttons{margin-left:auto}
+  .simple-history>summary{padding:16px;line-height:1.5}
+  .simple-record{overflow-wrap:anywhere}
+}
+@media(max-width:360px){.simple-fields{grid-template-columns:minmax(0,1fr)}.simple-fields>.field:first-child{grid-column:auto}.simple-header-actions{grid-template-columns:1fr 1fr}.simple-header-actions #simple-back{grid-column:1/-1}}
