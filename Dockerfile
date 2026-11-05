@@ -18,6 +18,12 @@ COPY materials-core.js materials-ui.js ./
 COPY tests/materials.cjs ./tests/
 RUN node --check materials-core.js && node --check materials-ui.js && node tests/materials.cjs
 
+COPY pdf-deps/ ./pdf-deps/
+COPY .github/scripts/build-pdf.sh ./build-pdf.sh
+RUN sh ./build-pdf.sh
+COPY reports-data.js reports-pdf.js ./
+RUN node --check reports-data.js && node --check reports-pdf.js
+
 FROM nginx:alpine
 # Preserve previous modules and data keys. Publish the tested lot workspace.
 COPY index.html /usr/share/nginx/html/legacy.html
@@ -30,9 +36,11 @@ COPY ["EB logo.jpg", "EB espadin.jpg", "EB Cup.jpg", "EB DB.jpg", "/usr/share/ng
 COPY simple-core.js simple-lot.js simple-lot.css /usr/share/nginx/html/
 COPY corrections-core.js corrections-ui.js corrections.css /usr/share/nginx/html/
 COPY materials.html materials-core.js materials-ui.js materials.css /usr/share/nginx/html/
+COPY reports-data.js reports-pdf.js /usr/share/nginx/html/
+COPY --from=verify /verify/vendor /usr/share/nginx/html/vendor
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN set -eu; nginx; \
-    for asset in materials.html materials-core.js materials-ui.js materials.css corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
+    for asset in reports-data.js reports-pdf.js vendor/jspdf.umd.min.js vendor/jspdf.plugin.autotable.min.js materials.html materials-core.js materials-ui.js materials.css corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
       wget -q -O /tmp/eb-resource "http://127.0.0.1/$asset"; \
       test -s /tmp/eb-resource; \
       echo "HTTP 200 VERIFIED: $asset"; \

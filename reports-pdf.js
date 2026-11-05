@@ -79,12 +79,12 @@
     finally{busy=false;if(button){button.disabled=false;button.textContent='PDF';}}
   }
   const controls=document.querySelector('.topbar .controls-row');
-  if(controls&&!$('eb-report-pdf')){const b=document.createElement('button');b.className='secondary';b.id='eb-report-pdf';b.type='button';b.textContent='PDF';b.title='Descargar reporte PDF con logo';b.setAttribute('aria-label','Descargar reporte PDF con logo');b.onclick=()=>download();controls.prepend(b);}
+  if(controls&&!$('eb-report-pdf')){const b=document.createElement('button');b.className='secondary';b.id='eb-report-pdf';b.type='button';if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar reporte PDF con logo';b.setAttribute('aria-label','Descargar reporte PDF con logo');b.onclick=()=>download();controls.prepend(b);}
   document.addEventListener('click',e=>{
     const b=e.target instanceof Element?e.target.closest('#simple-print,[data-print],#print-stock'):null;if(!b)return;
     e.preventDefault();e.stopImmediatePropagation();download(b.dataset.print?{type:'lot',lotId:b.dataset.print}:context());
   },true);
-  const rename=()=>{document.querySelectorAll('#simple-print,#print-stock').forEach(b=>{b.textContent='PDF';b.title='Descargar reporte PDF con logo';});};
+  const rename=()=>{document.querySelectorAll('#simple-print,#print-stock').forEach(b=>{if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar reporte PDF con logo';});};
   const app=$('app');if(app){const observer=new MutationObserver(rename);observer.observe(app,{childList:true,subtree:true});rename();}
   window.EBReports={context,generate,download};
 })();
