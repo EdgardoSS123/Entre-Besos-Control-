@@ -1,0 +1,181 @@
+name: Verify lot cards and unit cost
+on:
+  push:
+    branches: [work/lot-card-summary, main]
+    paths: ['lot-operations.js', 'lot-operations.css', 'control.html', 'tests/browser-lot-card-summary.py', '.github/workflows/lot-card-summary.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed display-only changes on development branch
+        if: github.ref == 'refs/heads/work/lot-card-summary'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,re
+          p=Path('lot-operations.js');s=p.read_text()
+          if 'function lotCardSummary(' not in s:
+              raw=p.read_bytes()
+              assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='86c8f1f5c8b8dabc8d562b01301b7247978fc4d2','Source changed: review before applying'
+              start=s.index('  drawLots=function(){base.drawLots();')
+              end=s.index('\n  function write(action)',start)
+              replacement=r'''
+            function lotCardCases(n){
+              const a=Math.abs(n),whole=Math.floor(a/6),loose=a%6;
+              return (n<0?'−(':'')+number(whole)+' corrugados'+(loose?' + '+number(loose)+' bot. sueltas':'')+(n<0?')':'');
+            }
+            function lotCardSummary(l,b){
+              const metric=(key,label,value)=>'<div class="lot-card-metric" data-summary="'+key+'"><span>'+label+'</span><strong data-summary-'+key+'>'+ (value===null?'Sin capturar':number(value))+'</strong><small>'+(value===null?'Registra el inventario actual':'botellas · '+lotCardCases(value))+'</small></div>';
+              let html='<div class="lot-card-metrics">'+metric('produced','Producidas',Number(l.bottles||0))+metric('current','Saldo actual',b.configured?b.total:null)+'</div>';
+              if(b.error)return html+'<p class="lot-card-warning">No se pudo calcular el saldo: '+esc(b.error)+'</p>';
+              html+='<p class="lot-card-activity">Vendidas: <b>'+number(b.sold||0)+'</b> · Muestras entregadas: <b>'+number(b.used||0)+'</b></p>';
+              if(!b.configured)return html;
+              if(b.unexplained)html+='<p class="lot-card-warning">'+(b.unexplained<0?'Registradas de más: ':'Por aclarar: ')+number(Math.abs(b.unexplained))+' botellas</p>';
+              const initial=(b.opening?.rows||[]).reduce((sum,r)=>sum+r.quantity,0);
+              const adjustments=(data.lotStockAdjustments||[]).filter(a=>a.lotId===l.id&&a.status!=='cancelled').reduce((sum,a)=>sum+a.delta,0);
+              const line=(label,n)=>'<div><dt>'+label+'</dt><dd>'+number(n)+' bot.</dd></div>';
+              html+='<details class="lot-card-calculation"><summary>Ver cálculo del saldo</summary><dl>'+line('Inventario inicial registrado',initial)+line('Ajustes de conteo (+/−)',adjustments)+line('Ventas descontadas',-(b.deliveredSales||0))+line('Muestras entregadas',-(b.samplesUsed||0))+line('En tránsito, fuera de bodega',-b.transit)+line('Saldo actual en bodegas',b.total)+'</dl><p class="small-note">Disponibles para vender: '+number(b.commercialTotal)+' botellas. Muestras aún en bodega: '+number(b.sampleTotal)+'.</p>';
+              const past=(b.sold||0)-(b.deliveredSales||0);
+              if(past)html+='<p class="small-note">Ventas anteriores al conteo: '+number(past)+'. Ya estaban fuera del inventario inicial; no se descuentan otra vez.</p>';
+              html+='<p class="small-note">Saldo según registros. Los traslados entre bodegas no cambian el total. La producción no se vuelve a sumar al inventario.</p></details>';
+              return html;
+            }
+            drawLots=function(){
+              try{data=freshData();}catch(e){toast('No se pudo leer el saldo actual. '+e.message);return;}
+              base.drawLots();
+              document.querySelectorAll('.saved-lot').forEach(card=>{
+                const id=card.querySelector('[data-edit]').dataset.edit,l=data.lots.find(x=>x.id===id);
+                if(!l)return;
+                let b;try{b=window.EBLedger.reconciliation(data,id);}catch(e){b={configured:false,error:e.message};}
+                card.dataset.lotSummary=id;
+                const label=document.createElement('span');label.className='lot-card-cost-label';label.textContent='COSTO POR BOTELLA';card.querySelector('.price').before(label);
+                const info=card.children[1],meta=info.querySelector('p');if(meta)meta.textContent=(l.date||'Fecha pendiente')+' · '+(l.ml||'—')+' ml';
+                const btn=document.createElement('button');btn.className='secondary stock-action';btn.textContent=b.configured?'Inventario y envíos':'Registrar dónde está';btn.onclick=()=>renderStock(id);card.querySelector('.actions').append(btn);
+                const saleButton=document.createElement('button');saleButton.className='secondary';saleButton.textContent='Ventas y muestras';saleButton.onclick=()=>window.EBCommerceUI.render(id);card.querySelector('.actions').append(saleButton);
+                const summary=document.createElement('section');summary.className='lot-card-summary';summary.setAttribute('aria-label','Producción y saldo del lote '+id);summary.innerHTML=lotCardSummary(l,b);info.append(summary);
+              });
+            };'''
+              p.write_text(s[:start]+replacement+s[end:])
+              p=Path('lot-operations.css');s=p.read_text()
+              s+='''\n/* Read-only lot cards: production is not the opening or current inventory. */
+          .saved-lot .lot-card-cost-label{display:block;font-size:10px;font-weight:750;letter-spacing:.06em;color:#52617b;line-height:1.5;margin-bottom:5px;text-align:right}
+          .lot-card-summary{margin-top:12px}.lot-card-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.lot-card-metric{min-width:0;background:#f5f7fb;border-radius:10px;padding:10px 12px}.lot-card-metric[data-summary="current"]{background:#eef7f3}.lot-card-metric>span,.lot-card-metric>small{display:block;font-size:11px;line-height:1.5;color:#52617b}.lot-card-metric>strong{display:block;font-size:23px;line-height:1.25;color:var(--ink);font-variant-numeric:tabular-nums;margin:3px 0}.lot-card-metric>small{font-size:10px;overflow-wrap:anywhere}.saved-lot .lot-card-activity{margin:8px 0 0;font-size:11px}.saved-lot .lot-card-warning{font-size:11px;color:#946013;margin-top:6px}.lot-card-calculation{margin-top:8px}.lot-card-calculation>summary{font-size:12px;cursor:pointer;min-height:36px;display:list-item;padding:8px 0;color:#52617b}.lot-card-calculation dl{font-size:11px;margin:0;padding:10px;background:#f8fafc;border-radius:8px}.lot-card-calculation dl>div{display:flex;justify-content:space-between;gap:12px;padding:4px 0}.lot-card-calculation dt{min-width:0}.lot-card-calculation dd{margin:0;white-space:nowrap;font-variant-numeric:tabular-nums}.lot-card-calculation dl>div:last-child{font-weight:750;border-top:1px solid var(--line);margin-top:5px;padding-top:8px}.lot-card-calculation .small-note{font-size:10px;line-height:1.6}
+          @media(max-width:700px){.saved-lot .lot-card-cost-label{text-align:inherit;font-size:10px}.lot-card-metrics{gap:7px}.lot-card-metric{padding:9px}.lot-card-metric>strong{font-size:22px}.lot-card-calculation>summary{min-height:44px}.lot-card-summary{margin-bottom:8px}}
+          '''
+              p.write_text(s)
+              p=Path('control.html');s=p.read_text()
+              s,n=re.subn(r'(lot-operations\.(?:js|css)\?v=)[^"\s]+',r'\g<1>lot-summary-cost1',s);assert n==2;p.write_text(s)
+          PY
+      - name: Write isolated lot card regression
+        if: github.ref == 'refs/heads/work/lot-card-summary'
+        run: |
+          cat > tests/browser-lot-card-summary.py <<'PY'
+          """Synthetic records in isolated browser profiles. Never accesses user data."""
+          import os,shutil,copy
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright,expect
+          URL=os.environ.get('EB_TEST_URL','http://127.0.0.1:8765/')
+          OUT=Path('/tmp/eb-lot-card-checks');OUT.mkdir(exist_ok=True)
+          fixture={'lots':[{'id':'CI-DB','p':2,'date':'2024-11-03','ml':720,'bottles':438,'producedLiters':350,'lossLiters':34,'remainingLiters':0.64,'productionMode':'liters','unitCost':237.66,'totalCost':104095.08}], 'moves':[], 'contacts':[{'preserve':'untouched'}], 'costs':{}, 'documents':[{'preserve':'untouched'}], 'inventoryOpenings':[{'lotId':'CI-DB','asOf':'2024-11-03','rows':[{'location':'CDMX','tag':'Por clasificar','quantity':394,'sampleQuantity':0}],'complete':False}]}
+          with sync_playwright() as p:
+              browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
+              for width,height in [(1440,1000),(390,844),(375,812)]:
+                  ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
+                  page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                  page.goto(URL,wait_until='networkidle');page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',fixture);page.reload(wait_until='networkidle')
+                  card=page.locator('[data-lot-summary="CI-DB"]')
+                  expect(card.locator('.lot-card-cost-label')).to_have_text('COSTO POR BOTELLA')
+                  assert card.locator('.lot-card-cost-label').bounding_box()['y'] < card.locator('.price').bounding_box()['y']
+                  expect(card.locator('[data-summary-produced]')).to_have_text('438')
+                  expect(card.locator('[data-summary-current]')).to_have_text('394')
+                  assert '65 corrugados + 4 bot. sueltas' in card.inner_text()
+                  assert '44 botellas' in card.locator('.lot-card-warning').inner_text()
+                  assert page.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')==fixture,'Display must not write'
+                  card.locator('[data-simple-open]').click()
+                  expect(page.locator('#simple-produced')).to_have_text('438');expect(page.locator('#simple-current')).to_have_text('394')
+                  page.locator('#simple-sale-tab').click();page.locator('#simple-amount').fill('25');page.locator('#simple-unit').select_option('bottle');page.locator('#simple-price').fill('1000');page.locator('#simple-save').click()
+                  expect(page.locator('#simple-current')).to_have_text('369');expect(page.locator('#simple-produced')).to_have_text('438')
+                  page.locator('#simple-sample-tab').click();page.locator('#simple-sample-action').select_option('consume');page.locator('#simple-amount').fill('6');page.locator('#simple-save').click()
+                  expect(page.locator('#simple-current')).to_have_text('363')
+                  page.locator('#simple-move-tab').click();page.locator('#simple-destination').select_option('USA');page.locator('#simple-amount').fill('5');page.locator('#simple-unit').select_option('bottle');page.locator('#simple-save').click()
+                  expect(page.locator('#simple-current')).to_have_text('363')
+                  page.locator('#simple-back').click()
+                  expect(card.locator('[data-summary-produced]')).to_have_text('438');expect(card.locator('[data-summary-current]')).to_have_text('363')
+                  assert '60 corrugados + 3 bot. sueltas' in card.inner_text()
+                  assert 'Vendidas: 25' in card.inner_text() and 'Muestras entregadas: 6' in card.inner_text()
+                  card.locator('.lot-card-calculation > summary').click()
+                  assert '394 bot.' in card.locator('dl').inner_text() and '-25 bot.' in card.locator('dl').inner_text() and '-6 bot.' in card.locator('dl').inner_text() and '363 bot.' in card.locator('dl').inner_text()
+                  assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Horizontal overflow'
+                  page.screenshot(path=str(OUT/f'lot-cards-{width}.png'),full_page=True)
+                  snapshot=page.evaluate('JSON.parse(localStorage.getItem("eb-v1"))');page.reload(wait_until='networkidle')
+                  expect(card.locator('[data-summary-current]')).to_have_text('363')
+                  assert page.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')==snapshot
+                  page.locator('#search-lots').fill('CI');page.locator('#search-lots').fill('');expect(card.locator('.lot-card-cost-label')).to_have_count(1)
+                  card.locator('[data-simple-open]').click();page.locator('#simple-sale-tab').click();page.locator('#simple-amount').fill('500');page.locator('#simple-unit').select_option('bottle');page.locator('#simple-price').fill('1000');page.locator('#simple-save').click()
+                  expect(page.locator('#simple-current')).to_have_text('-137');page.locator('#simple-back').click();expect(card.locator('[data-summary-current]')).to_have_text('-137')
+                  current=page.evaluate('JSON.parse(localStorage.getItem("eb-v1"))');assert current['contacts']==fixture['contacts'] and current['documents']==fixture['documents']
+                  uncounted=copy.deepcopy(fixture);uncounted['inventoryOpenings']=[];page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',uncounted);page.reload(wait_until='networkidle')
+                  expect(card.locator('[data-summary-current]')).to_have_text('Sin capturar');expect(card.locator('[data-summary-produced]')).to_have_text('438')
+                  assert page.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')==uncounted
+                  assert not errors,errors
+                  print('PASS LOT CARD',width,'cost label above amount; produced vs initial vs live balance; sale/sample deductions; transfer conservation; discrepancies; signed stock; reload; no writes from viewing')
+                  ctx.close()
+              browser.close()
+          PY
+      - name: Verify syntax and all ledger calculations
+        run: |
+          node --check lot-operations.js
+          git diff --check
+          for test in tests/*.cjs; do node "$test"; done
+      - name: Prepare browser
+        run: python3 -m pip install playwright==1.56.0
+      - name: Start isolated development server
+        if: github.ref != 'refs/heads/main'
+        run: |
+          python3 tests/serve.py >/tmp/eb-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8765/ >/dev/null && break; sleep 1; done
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published application files
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          files={'control.html':'','lot-operations.js':'lot-operations.js','lot-operations.css':'lot-operations.css'}
+          for attempt in range(36):
+              try:
+                  for local,remote in files.items():
+                      actual=urllib.request.urlopen(base+remote+'?check='+str(time.time_ns()),timeout=20).read()
+                      assert actual==Path(local).read_bytes(),local+' not yet published'
+                  break
+              except Exception:
+                  if attempt==35:raise
+                  time.sleep(5)
+          print('PASS exact published HTML, scripts and styles match this commit')
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test list and detail balances with isolated synthetic records
+        run: python3 tests/browser-lot-card-summary.py
+      - name: Commit only verified display changes on development branch
+        if: github.ref == 'refs/heads/work/lot-card-summary'
+        run: |
+          git fetch origin work/lot-card-summary
+          test "$(git rev-parse origin/work/lot-card-summary)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lot-operations.js lot-operations.css control.html tests/browser-lot-card-summary.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Mostrar costo por botella, producidas y saldo actual con desglose verificable'
+            git push origin HEAD:work/lot-card-summary
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lot-card-checks
+          path: /tmp/eb-lot-card-checks
+          retention-days: 3
