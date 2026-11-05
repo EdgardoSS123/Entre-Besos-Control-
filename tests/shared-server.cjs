@@ -1,0 +1,34 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+const {createApp}=require('../server.cjs');
+const salt='12'.repeat(16),hash=crypto.scryptSync('only-test-password',Buffer.from(salt,'hex'),64,{N:32768,r:8,p:1,maxmem:64*1024*1024}).toString('hex');
+const users=[{username:'test-editor',name:'Pruebas EB1',role:'editor',salt,hash},{username:'test-reader',role:'reader',salt,hash}];
+const folder=fs.mkdtempSync(path.join(os.tmpdir(),'eb-shared-test-')),origin='http://127.0.0.1:8768';
+async function main(){
+ let app=createApp({folder,users,origins:[origin],secure:false,root:path.join(__dirname,'..')});await new Promise(r=>app.server.listen(8768,'127.0.0.1',r));
+ const call=async(route,method='GET',body,s,extra={})=>{const r=await fetch(origin+'/api/'+route,{method,headers:{Connection:'close',Origin:origin,'Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-EB-CSRF':s.csrf}:{}),...extra},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
+ assert.equal((await call('state')).status,401);
+ assert.equal((await call('login','POST',{username:'test-editor',password:'wrong'})).status,401);
+ const a=await call('login','POST',{username:'test-editor',password:'only-test-password'}),b=await call('login','POST',{username:'test-reader',password:'only-test-password'});assert.equal(a.status,200);assert.equal(b.status,200);
+ const A={cookie:a.cookie,csrf:a.body.csrf},B={cookie:b.cookie,csrf:b.body.csrf};
+ assert.equal((await call('state','GET',null,A)).body.data,null);
+ const seed={lots:[{id:'L-TEST',bottles:714}],moves:[],contacts:[['Test']],costs:{},materials:[{name:'Playeras',qty:20,totalCost:1200}],supplies:[{name:'Botellas',qty:4}],documents:[{name:'Laboratorio',link:'https://example.org/demo'}]};
+ const first={data:seed,revision:0,operation:crypto.randomUUID(),initialize:true};
+ assert.equal((await call('state','PUT',first,B)).status,403);
+ assert.equal((await call('state','PUT',first,A,{'X-EB-CSRF':'invalid'})).status,403);
+ assert.equal((await call('state','PUT',first,A,{Origin:'https://not-authorized.invalid'})).status,403);
+ assert.equal((await call('state','PUT',first,A)).body.revision,1);
+ assert.deepEqual((await call('state','GET',null,B)).body.data,seed);
+ assert.equal((await call('state','PUT',first,A)).body.revision,1);
+ assert.equal((await call('state','PUT',{...first,operation:crypto.randomUUID()},A)).status,409);
+ const next={...seed,materials:[{name:'Playeras',qty:24,totalCost:1440}]};assert.equal((await call('state','PUT',{data:next,revision:1,operation:crypto.randomUUID()},A)).body.revision,2);
+ assert.equal((await call('state?since=2','GET',null,B)).body.unchanged,true);
+ assert.deepEqual((await call('state','GET',null,B)).body.data,next);
+ assert.deepEqual(JSON.parse(app.db.prepare('SELECT payload FROM revisions WHERE revision=1').get().payload),seed);
+ await new Promise(r=>app.server.close(r));app.db.close();app=createApp({folder,users,origins:[origin],secure:false,root:path.join(__dirname,'..')});await new Promise(r=>app.server.listen(8768,'127.0.0.1',r));
+ assert.deepEqual((await call('state','GET',null,B)).body.data,next);
+ assert.equal((await call('logout','POST',{},A)).status,200);assert.equal((await call('state','GET',null,A)).status,401);
+ for(let i=0;i<11;i++)var bad=await call('login','POST',{username:'nobody',password:'bad'});assert.equal(bad.status,429);
+ await new Promise(r=>app.server.close(r));app.db.close();fs.rmSync(folder,{recursive:true,force:true});console.log('PASS shared backend: auth, reader isolation, CSRF/origin, two clients, all data fields, optimistic concurrency, retry safety, persistent restart and revision recovery.');
+}
+main().catch(e=>{console.error(e);process.exit(1);});
