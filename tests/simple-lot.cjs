@@ -12,7 +12,7 @@ assert.equal(I.balance(d,id).total,1200);assert.equal(I.reconciliation(d,id).sol
 assert.equal(d.lotSales[0].totalCents,24000000);
 d=I.moveStock(d,id,args({from:'USA',to:'CDMX',tag:'Exportación',amount:'0.5',unit:'pallet',cost:'',currency:'MXN'}),now);
 assert.equal(I.balance(d,id).total,1200);assert.equal(I.available(d,id,'USA','Exportación'),960);assert.equal(I.available(d,id,'CDMX','Exportación'),240);
-assert.throws(()=>I.moveStock(d,id,args({from:'USA',to:'CDMX',tag:'Exportación',amount:3,unit:'pallet',cost:''}),now));
+assert.throws(()=>I.moveStock(d,id,args({from:'USA',to:'CDMX',tag:'Exportación',amount:-3,unit:'pallet',cost:''}),now));
 let h=fresh();h=I.countStock(h,id,args({location:'USA',tag:'Exportación',amount:'2.5',unit:'pallet',samples:0}),now);
 h=I.knownSale(h,id,args({amount:'0.5',unit:'pallet',price:'',currency:'USD',payment:'unknown'}),now);
 assert.equal(I.balance(h,id).total,1200);assert.equal(I.reconciliation(h,id).unexplained,0);assert.equal(I.saleStatus(h.lotSales[0],now).status,'Precio pendiente');assert.equal(h.lotSales[0].from,null);assert.equal(h.lotSales[0].date,null);

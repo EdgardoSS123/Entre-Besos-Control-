@@ -24,7 +24,7 @@ assert.equal(quantity(depots[0]),6);assert.equal(quantity('CDMX'),84);assert.equ
 d=I.addPayment(d,'MINI','sale',{id:'pay',amount:6600,date:now,stamp},now);assert.equal(I.balance(d,'MINI').total,114);assert.equal(I.saleStatus(d.lotSales[0],now).status,'Pagada');
 d=I.saveShipment(d,'MINI',{id:'return',from:depots[2],to:'CDMX',purpose:'transfer',tag:'Nacional',amount:2,unit:'bottle',date:now,stamp,received:true},now);
 assert.equal(quantity(depots[2]),10);assert.equal(quantity('CDMX'),86);assert.equal(I.balance(d,'MINI').total,114);
-assert.throws(()=>I.saveSale(d,'MINI',{id:'over',from:depots[0],tag:'Nacional',customer:'Test',amount:2,unit:'box',price:1,priceBasis:'box',currency:'MXN',date:now},now),/Solo hay/);
+assert.throws(()=>I.saveSale(d,'MINI',{id:'over',from:depots[0],tag:'Nacional',customer:'Test',amount:-2,unit:'box',price:1,priceBasis:'box',currency:'MXN',date:now},now));
 assert.deepEqual(d.lots,JSON.parse(before).lots);assert.deepEqual(d.documents,JSON.parse(before).documents);assert.deepEqual(d.contacts,JSON.parse(before).contacts);
 const initial=I.saveOpening(JSON.parse(before),'MINI',{asOf:now,complete:false,stamp,rows:[{location:depots[0],tag:'Nacional',amount:3,unit:'box'},{location:depots[1],tag:'Nacional',amount:1,unit:'box',isSample:true}]},now);
 assert.equal(I.balance(initial,'MINI').total,24);assert.equal(I.balance(initial,'MINI').sampleTotal,6);assert.equal(I.balance(initial,'MINI').complete,false);

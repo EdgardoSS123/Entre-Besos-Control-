@@ -48,8 +48,8 @@ with sync_playwright() as p:
   b=page.evaluate("EBLedger.balance(JSON.parse(localStorage.getItem('eb-v1')),'TEST-LOT-01')")
   assert b['total']==600 and b['transit']==0
   assert page.locator('#edit-opening').is_disabled()
-  page.locator('#new-shipment').click();page.locator('#ship-tag').select_option('Nacional');page.locator('#ship-amount').fill('421');page.locator('#save-shipment').click()
-  assert 'Solo hay 420' in page.locator('#inventory-errors').inner_text()
+  page.locator('#new-shipment').click();page.locator('#ship-tag').select_option('Nacional');page.locator('#ship-amount').fill('-421');page.locator('#save-shipment').click()
+  assert page.locator('#inventory-errors').is_visible()
   assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lotShipments.length")==1
   page.locator('#ship-history').check();page.locator('#ship-amount').fill('');page.locator('#ship-cost-known').check();page.locator('#ship-cost').fill('100');page.locator('#ship-currency').select_option('USD');page.locator('#ship-cost-included').check();page.locator('#save-shipment').click()
   assert page.evaluate("EBLedger.balance(JSON.parse(localStorage.getItem('eb-v1')),'TEST-LOT-01').total")==600

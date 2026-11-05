@@ -46,9 +46,10 @@
     }
     for(const s of sales(d,id))if(s.stockEffect){row(s.from,s.tag).quantity-=s.quantity;directSales+=s.quantity;}
     const rows=[...map.values()].map(r=>({...r,commercialQuantity:r.quantity-r.sampleQuantity}));
-    if(rows.some(r=>!Number.isSafeInteger(r.quantity)||!Number.isSafeInteger(r.sampleQuantity)||r.quantity<0||r.sampleQuantity<0||r.sampleQuantity>r.quantity))fail('La operación deja inventario comercial o muestras insuficientes. No se guardó.');
+    if(rows.some(r=>!Number.isSafeInteger(r.quantity)||!Number.isSafeInteger(r.sampleQuantity)||!Number.isSafeInteger(r.commercialQuantity)))fail('La cantidad de inventario está fuera de rango.');
     const total=rows.reduce((n,r)=>n+r.quantity,0),sampleTotal=rows.reduce((n,r)=>n+r.sampleQuantity,0);
-    return {...b,rows,total,knownTotal:total+b.transit,atThirdParties:rows.filter(r=>base.locationInfo(d,r.location).kind!=='warehouse').reduce((n,r)=>n+r.quantity,0),deliveredSales:b.deliveredSales+directSales,sampleTotal,sampleTransit,samplesUsed,commercialTotal:total-sampleTotal};
+    const stockWarnings=rows.filter(r=>r.quantity<0||r.sampleQuantity<0||r.commercialQuantity<0).map(r=>({location:r.location,tag:r.tag,quantity:r.quantity,sampleQuantity:r.sampleQuantity,commercialQuantity:r.commercialQuantity}));
+    return {...b,stockWarnings,rows,total,knownTotal:total+b.transit,atThirdParties:rows.filter(r=>base.locationInfo(d,r.location).kind!=='warehouse').reduce((n,r)=>n+r.quantity,0),deliveredSales:b.deliveredSales+directSales,sampleTotal,sampleTransit,samplesUsed,commercialTotal:total-sampleTotal};
   }
   function available(d,id,where,tag,type='commercial'){const r=balance(d,id).rows.find(r=>r.location===where&&r.tag===tag);return r?(type==='sample'?r.sampleQuantity:r.commercialQuantity):0;}
   function saveOpening(d,id,input,now){
@@ -70,8 +71,8 @@
       const n=base.quantity(input.amount,input.unit);
       const r=balance(d,id).rows.find(x=>x.location===input.from&&x.tag===input.tag);
       const a=isSample?(r?.quantity||0):available(d,id,input.from,input.tag,stockType);
-      if(n>a)fail('Solo hay '+a+' botellas disponibles en '+input.from+'.');
-      if(isSample){sourceSampleQuantity=Math.min(n,r?.sampleQuantity||0);stockType=sourceSampleQuantity===n?'sample':'commercial';}
+      // Preserve signed balances for reconciliation.
+      if(isSample){sourceSampleQuantity=Math.max(0,Math.min(n,r?.sampleQuantity||0));stockType=sourceSampleQuantity===n?'sample':'commercial';}
     }
     const next=base.saveShipment(d,id,{...input,purpose},now),s=next.lotShipments.find(x=>x.id===input.id);s.stockType=stockType;
     if(sourceSampleQuantity!==undefined)s.sourceSampleQuantity=sourceSampleQuantity;
@@ -85,10 +86,10 @@
     if(!base.locations(d).includes(input.location)||!base.LABELS.includes(input.tag))fail('Selecciona ubicación y etiqueta.');
     const stockType=input.stockType||'sample';if(!['commercial','sample','any'].includes(stockType)||stockType==='any'&&input.type!=='consume')fail('Selecciona el tipo de existencias.');
     const n=base.quantity(input.amount,input.unit),source=input.type==='reserve'||(input.type==='consume'&&stockType==='commercial')?'commercial':'sample',a=stockType==='any'?(balance(d,id).rows.find(r=>r.location===input.location&&r.tag===input.tag)?.quantity||0):available(d,id,input.location,input.tag,source);
-    if(n>a)fail('Solo hay '+a+' botellas '+(source==='sample'?'de muestra':'comerciales')+' disponibles.');
+    // Known samples can be recorded before correcting counts.
     const notes=String(input.notes||'').trim();if(input.type!=='reserve'&&!notes)fail('Indica el motivo o destinatario para conservar el historial.');
     const next=copy(d),unitCostMXN=priceCost(l);
-    const sampleDebit=stockType==='any'?{sourceSampleQuantity:Math.min(n,available(d,id,input.location,input.tag,'sample'))}:{};
+    const sampleDebit=stockType==='any'?{sourceSampleQuantity:Math.max(0,Math.min(n,available(d,id,input.location,input.tag,'sample')))}:{};
     (next.lotSampleActions=next.lotSampleActions||[]).push({id:input.id,lotId:id,type:input.type,stockType,...sampleDebit,location:input.location,tag:input.tag,quantity:n,date:input.date,notes:notes.slice(0,2000),createdAt:input.stamp,category:'Muestras y promoción',income:0,receivable:0,unitCostMXN,costMXN:unitCostMXN===null?null:Math.round(n*unitCostMXN*100)/100});
     balance(next,id);return next;
   }
@@ -106,8 +107,8 @@
     }else{
       n=base.quantity(input.amount,input.unit);from=input.from;tag=input.tag;customer=String(input.customer||'').trim();
       if(!base.locations(d).includes(from)||!base.LABELS.includes(tag))fail('Selecciona ubicación de salida y etiqueta.');
-      if(mode==='direct'){afterCut(d,id,input.date,now);const a=available(d,id,from,tag);if(n>a)fail('Solo hay '+a+' botellas comerciales; las muestras no están disponibles para venta.');}
-      else{const o=base.opening(d,id);if(!o)fail('Primero guarda el inventario inicial.');if(input.date>o.asOf)fail('La venta histórica debe ser anterior o igual al corte inicial.');if(n>Number(l.bottles))fail('La cantidad supera la producción declarada del lote.');}
+      if(mode==='direct'){afterCut(d,id,input.date,now);const a=available(d,id,from,tag);/* Negative balances are shown, not rejected. */}
+      else{const o=base.opening(d,id);if(!o)fail('Primero guarda el inventario inicial.');if(input.date>o.asOf)fail('La venta histórica debe ser anterior o igual al corte inicial.');/* Production differences stay visible. */}
     }
     if(!customer||customer.length>160)fail('Captura el nombre del cliente (máximo 160 caracteres).');
     if(!base.CURRENCIES.includes(input.currency))fail('Selecciona la moneda de la venta.');

@@ -12,8 +12,8 @@ const input={id:'sale1',mode:'direct',date:now,from:'Oaxaca',tag:'Nacional',cust
 d=I.saveSale(d,'A',input,now);assert.equal(I.balance(d,'A').total,432);assert.equal(I.available(d,'A','Oaxaca','Nacional'),420);
 assert.equal(d.lotSales[0].totalCents,1500000);assert.equal(I.saleStatus(d.lotSales[0],now).pendingCents,1000000);
 assert.throws(()=>I.saveSale(d,'A',input,now),/registrada/);
-assert.throws(()=>I.saveSale(d,'A',{...input,id:'bad',amount:71},now),/420/);
-assert.throws(()=>I.saveSale(d,'A',{...input,id:'bad',from:'Singapur',tag:'Exportación',amount:1},now),/muestras/);
+assert.throws(()=>I.saveSale(d,'A',{...input,id:'bad',amount:-71},now));
+assert.equal(I.available(I.saveSale(d,'A',{...input,id:'bad',from:'Singapur',tag:'Exportación',amount:1,paidAmount:0},now),'A','Singapur','Exportación'),-6);
 assert.throws(()=>I.addPayment(d,'A','sale1',{id:'p1',amount:10001,date:now},now),/supera/);
 d=I.addPayment(d,'A','sale1',{id:'p1',amount:10000,date:now,stamp},now);assert.equal(I.saleStatus(d.lotSales[0],now).status,'Pagada');assert.equal(I.balance(d,'A').total,432);
 assert.throws(()=>I.addPayment(d,'A','sale1',{id:'p1',amount:100,date:now},now),/registró/);
@@ -38,4 +38,4 @@ assert.throws(()=>I.saveSale(d,'A',{...input,id:'no-price',price:0},now),/Muestr
 assert.throws(()=>I.quote(1,'0.001','bottle'),/decimales/);
 assert.equal(I.quote(3,'100','box').totalCents,5000);
 assert.throws(()=>I.sampleAction(d,'A',{id:'negative',type:'reserve',location:'Oaxaca',tag:'Nacional',amount:-1,unit:'bottle',date:now},now));
-console.log('PASS: sales, prices, partial/full payments, no duplicate inventory discount, opening samples, classification, sample consumption, dispatch, currency separation, historical values and oversell protection');
+console.log('PASS: sales, prices, partial/full payments, no duplicate inventory discount, opening samples, classification, sample consumption, dispatch, currency separation, historical values and signed stock reconciliation');

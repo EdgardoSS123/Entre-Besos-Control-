@@ -13,7 +13,7 @@ let b=I.balance(d,'LOT');assert.equal(b.total,420);assert.equal(b.transit,60);as
 assert.equal(d.lotShipments[0].inputAmount,10);assert.equal(d.lotShipments[0].inputUnit,'box');assert.equal(d.lotShipments[0].destination.kind,'distributor');assert.equal(d.lotShipments[0].destination.address,'Bodega Georgia');
 d=I.receive(d,'LOT','A',now,now,stamp);b=I.balance(d,'LOT');assert.equal(b.total,480);assert.equal(b.transit,0);assert.equal(b.atThirdParties,60);assert.equal(b.deliveredSales,0);
 assert.throws(()=>I.receive(d,'LOT','A',now,now,stamp));
-assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',amount:71},now),/Solo hay 420/);
+assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',amount:-71},now));
 assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',purpose:'transfer'},now),/consignación/);
 assert.throws(()=>I.saveShipment(d,'LOT',{...input,id:'X',purpose:'unknown'},now));
 assert.equal(I.saveShipment(d,'LOT',{...input,id:'X',amount:1.5},now).lotShipments.at(-1).quantity,9);

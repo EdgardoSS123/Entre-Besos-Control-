@@ -32,7 +32,7 @@ assert.equal(I.balance(missing,'L').total,689);assert.equal(missing.lotSales[0].
 let rev=I.removeRecord(delivered,'L','sample','sample',JSON.stringify(delivered.lotSampleActions[0]),meta());assert.equal(I.balance(rev,'L').total,689);
 rev=I.undoCorrection(rev,rev.editHistory.at(-1).id,meta());assert.equal(I.balance(rev,'L').total,683);
 rev=I.correctSample(rev,'L','sample',{location:'CDMX',tag:'Por clasificar',amount:3,unit:'bottle',type:'consume',date:day,notes:'Corrected'},JSON.stringify(rev.lotSampleActions[0]),meta(),day);assert.equal(I.balance(rev,'L').total,686);
-assert.throws(()=>I.deliverSamples(delivered,'L',{id:'too-many',from:'CDMX',tag:'Por clasificar',amount:1000,unit:'bottle',stockType:'commercial',stamp:day},day),/Solo hay/);
+assert.throws(()=>I.deliverSamples(delivered,'L',{id:'too-many',from:'CDMX',tag:'Por clasificar',amount:-1000,unit:'bottle',stockType:'commercial',stamp:day},day));
 // Setting origin on an existing lot with current stock never overwrites the count.
 const record={...sold.lots[0],originWarehouse:'Oaxaca'};const corrected=I.correctLot(sold,'L',record,JSON.stringify(sold.lots[0]),meta());assert.equal(I.balance(corrected,'L').total,689);assert.equal(I.available(corrected,'L','CDMX','Por clasificar'),689);
 // Origin added to an unconfigured old lot is reversible together with the generated initial balance.

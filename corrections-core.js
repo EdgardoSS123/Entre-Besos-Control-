@@ -17,7 +17,7 @@
   function tag(v) {if(!I.LABELS.includes(v))fail('Selecciona una etiqueta válida.');return v;}
   function currency(v) {if(!I.CURRENCIES.includes(v))fail('Selecciona una moneda válida.');return v;}
   function bundle(d,ids) {const b={};for(const [k,arr] of Object.entries(d)){if(k==='editHistory'||!Array.isArray(arr))continue;const chosen=arr.filter(x=>k==='lots'?ids.includes(x.id):ids.some(id=>owns(x,id)));if(chosen.length)b[k]=copy(chosen);}return b;}
-  function validate(d,ids) {for(const id of ids)if((d.lots||[]).some(l=>l.id===id)){try{I.balance(d,id);}catch(e){fail('No se guardó: esta corrección dejaría existencias o muestras negativas. Corrige primero la venta o el movimiento relacionado. '+e.message);}for(const s of I.sales(d,id)){const paid=(s.payments||[]).reduce((a,p)=>a+p.amountCents,0);if(!Number.isSafeInteger(paid)||paid<0)fail('Revisa los pagos de la venta.');if(paid>0&&(!Number.isSafeInteger(s.totalCents)||paid>s.totalCents))fail('Los cobros superan el nuevo total. Corrige el pago antes de reducir la venta.');}}}
+  function validate(d,ids) {for(const id of ids)if((d.lots||[]).some(l=>l.id===id)){I.balance(d,id);for(const s of I.sales(d,id)){const paid=(s.payments||[]).reduce((a,p)=>a+p.amountCents,0);if(!Number.isSafeInteger(paid)||paid<0)fail('Revisa los pagos de la venta.');if(paid>0&&(!Number.isSafeInteger(s.totalCents)||paid>s.totalCents))fail('Los cobros superan el nuevo total. Corrige el pago antes de reducir la venta.');}}}
   function finish(d,next,ids,title,meta={}) {validate(next,ids);const before=bundle(d,ids),after=bundle(next,ids);if(eq(before,after))return next;next.editHistory=next.editHistory||[];const positions={};for(const k of Object.keys(before))positions[k]=(d[k]||[]).map((x,i)=>(k==='lots'?ids.includes(x.id):ids.some(id=>owns(x,id)))?i:-1).filter(i=>i>=0);next.editHistory.push({id:meta.id,at:meta.stamp,lotIds:ids,title,before,after,positions,deleted:!!meta.deleted});return next;}
   function relatedCount(d,id){return Object.entries(bundle(d,[id])).filter(([k])=>k!=='lots'&&!k.toLowerCase().includes('revision')).reduce((s,[,v])=>s+v.length,0);}
   function correctLot(d,id,record,expected,meta) {
@@ -38,7 +38,10 @@
     const mode=s.shipmentId?'shipment':p.historical?'historical':'direct',historical=mode==='historical';
     const n=I.quantity(p.amount,p.unit),price=String(p.price??'').trim().replace(',','.');
     if(!price&&!historical&&s.priceKnown!==false)fail('Captura el precio de venta.');
-    const q=price?I.quote(n,price,p.priceBasis):{priceCents:null,totalCents:null,priceBasis:p.priceBasis||'bottle'};
+    const oldBottle=s.priceCents==null?'':Number((s.priceCents/100/(s.priceBasis==='box'?6:1)).toFixed(6)).toString();
+    const unchangedLegacy=p.priceBasis==='bottle'&&s.priceBasis==='box'&&price!==''&&Number(price)===Number(oldBottle);
+    const q=unchangedLegacy?I.quote(n,(s.priceCents/100).toFixed(2),'box'):price?I.quote(n,price,p.priceBasis):{priceCents:null,totalCents:null,priceBasis:p.priceBasis||'bottle'};
+    if(unchangedLegacy&&n===s.quantity)q.totalCents=s.totalCents;
     const paid=(s.payments||[]).reduce((a,x)=>a+x.amountCents,0);
     if(s.currency!==p.currency&&paid)fail('Esta venta tiene cobros. Corrige o elimina esos pagos antes de cambiar la moneda.');
     const saleDate=date(p.date,now,historical||!!s.inventoryAppliedDate),o=I.opening(d,id);
@@ -55,7 +58,7 @@
     if(!alive(s)||s.stockEffect||s.shipmentId||s.mode!=='historical')fail('Esta venta ya descuenta existencias o tiene una salida vinculada.');
     const from=loc(d,p.from),label=tag(p.tag);date(now,now);
     const available=I.available(d,id,from,label);
-    if(s.quantity>available)fail('Solo hay '+available+' botellas comerciales en esta bodega.');
+    // Apply an existing sale once; retain discrepancies for review.
     const next=copy(d),t=next.lotSales.find(x=>x.id===rid&&x.lotId===id);
     Object.assign(t,{mode:'direct',stockEffect:true,from,tag:label,inventoryAppliedDate:now,inventoryAppliedAt:meta.stamp,updatedAt:meta.stamp});
     return finish(d,next,[id],'Descontar venta registrada de '+s.quantity+' botellas en '+from,meta);
@@ -75,7 +78,7 @@
       if(!historical&&p.purpose==='sample'){
         const r=I.balance(d,id).rows.find(x=>x.location===from&&x.tag===p.tag);
         const restored=s.from===from&&s.tag===p.tag&&!s.historical?s.sourceSampleQuantity:0;
-        t.sourceSampleQuantity=Math.min(n,(r?.sampleQuantity||0)+restored);
+        t.sourceSampleQuantity=Math.max(0,Math.min(n,(r?.sampleQuantity||0)+restored));
         t.stockType=t.sourceSampleQuantity===n?'sample':'commercial';
       }
     }
@@ -90,7 +93,7 @@
       if(p.type==='consume'){
         const current=I.balance(d,id).rows.find(x=>x.location===p.location&&x.tag===p.tag);
         const restored=r.type==='consume'&&r.location===p.location&&r.tag===p.tag?r.sourceSampleQuantity:0;
-        t.sourceSampleQuantity=Math.min(n,(current?.sampleQuantity||0)+restored);t.stockType='any';
+        t.sourceSampleQuantity=Math.max(0,Math.min(n,(current?.sampleQuantity||0)+restored));t.stockType='any';
       }else t.stockType='sample';
     }
     return finish(d,next,[id],'Editar muestras',meta);}

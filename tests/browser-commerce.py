@@ -19,7 +19,7 @@ with sync_playwright() as p:
   bal=lambda:page.evaluate("EBLedger.balance(JSON.parse(localStorage.getItem('eb-v1')),'CI-COMMERCE')")
   assert bal()['total']==372 and bal()['sampleTotal']==12
   page.locator('#open-commerce').click();page.locator('#sale-price').wait_for()
-  page.locator('#sale-customer').fill('Cliente CI');page.locator('#sale-amount').fill('10');page.locator('#sale-price').fill('6600');page.locator('#sale-payment-state').select_option('partial');page.locator('#sale-paid').fill('16500')
+  page.locator('#sale-customer').fill('Cliente CI');page.locator('#sale-amount').fill('10');page.locator('#sale-price').fill('1100');page.locator('#sale-payment-state').select_option('partial');page.locator('#sale-paid').fill('16500')
   page.screenshot(path=str(OUT/f'commerce-sale-form-{width}.png'),full_page=True)
   page.locator('#save-sale').click()
   assert bal()['total']==312 and bal()['sampleTotal']==12
@@ -42,8 +42,8 @@ with sync_playwright() as p:
   assert bal()['total']==281
   assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lotSales.length")==2
   page.locator('#sale-mode').select_option('historical');page.locator('#sale-amount').fill('2');page.locator('#sale-price').fill('6000');page.locator('#sale-customer').fill('Cliente histórico CI');page.locator('#save-sale').click();assert bal()['total']==281
-  page.locator('#sale-amount').fill('10000');page.locator('#sale-customer').fill('No guardar');page.locator('#sale-price').fill('6000');page.locator('#save-sale').click()
-  assert 'Solo hay' in page.locator('#commerce-errors').inner_text();assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lotSales.length")==3
+  page.locator('#sale-amount').fill('-10000');page.locator('#sale-customer').fill('No guardar');page.locator('#sale-price').fill('6000');page.locator('#save-sale').click()
+  assert page.locator('#commerce-errors').is_visible();assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lotSales.length")==3
   page.evaluate('window.print=()=>{}');page.locator('#commerce-print').click();report=page.locator('#print-view').inner_text();assert 'Cliente CI' in report and 'Ingreso $0' in report and '66,000.00' in report
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'), 'Horizontal overflow'
   snapshot=page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")

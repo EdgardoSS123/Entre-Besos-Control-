@@ -1,17 +1,18 @@
 'use strict';
 (function(){
   const I=window.EBLedger,$s=id=>document.getElementById(id),num=n=>number(n),idNew=()=>crypto.randomUUID(),stamp=()=>new Date().toISOString();
-  let active=null,screen='count',preferred='',formId=null,expected=null,printed=null;
+  let active=null,screen='count',preferred='',formId=null,expected=null,printed=null,historyLocation='';
   const opts=(arr,v)=>arr.map(([key,text])=>'<option value="'+esc(key)+'" '+(key===v?'selected':'')+'>'+esc(text)+'</option>').join('');
   const sel=(id,label,arr,v)=>'<div class="field"><label for="'+id+'">'+label+'</label><select id="'+id+'">'+opts(arr,v)+'</select></div>';
   const inp=(id,label,v='',extra='')=>'<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" value="'+esc(v)+'" '+extra+'></div>';
   const decimal='type="text" inputmode="decimal" autocomplete="off" placeholder="Cantidad" maxlength="24"';
   const units=[['bottle','Botellas'],['box','Cajas (6)'],['pallet','Pallets (480)']];
   const locations=()=>I.locations(data).map(x=>[x,x==='CDMX'?'México · CDMX':x]);
-  const cases=n=>{const p=I.packCounts(n);return num(p.fullCases)+' corrugados'+(p.looseBottles?' + '+num(p.looseBottles)+' bot. sueltas':'');};
+  const cases=n=>{const p=I.packCounts(n);return (p.sign<0?'−':'')+num(p.fullCases)+' corrugados'+(p.looseBottles?' + '+num(p.looseBottles)+' bot. sueltas':'');};
   const pretty=n=>num(n)+' botellas · '+cases(n);
   const metric=(label,n,id)=>'<div><small>'+label+'</small><strong'+(id?' id="'+id+'"':'')+'>'+num(n)+'</strong><span class="metric-unit">botellas</span><span class="metric-cases">'+cases(n)+'</span></div>';
-  function sampleOptions(){return I.balance(data,active).rows.filter(r=>r.quantity>0).map(r=>[JSON.stringify([r.location,r.tag]),r.location+' · '+r.tag+' ('+num(r.quantity)+' bot.; '+num(r.sampleQuantity)+' muestras)']);}
+  function allBuckets(){const rows=I.balance(data,active).rows.slice();I.locations(data).forEach(location=>{if(!rows.some(r=>r.location===location))rows.push({location,tag:'Por clasificar',quantity:0,sampleQuantity:0,commercialQuantity:0});});return rows;}
+  function sampleOptions(){return allBuckets().map(r=>[JSON.stringify([r.location,r.tag]),r.location+' · '+r.tag+' ('+num(r.quantity)+' bot.; '+num(r.sampleQuantity)+' muestras)']);}
   const fmt=(v,c)=>v===null||v===undefined?'Por confirmar':new Intl.NumberFormat('es-MX',{style:'currency',currency:c}).format(v/100)+' '+c;
   function fail(e){const box=$s('simple-error');if(box){box.textContent=e.message||String(e);box.hidden=false;}else toast(e.message);}
   function write(action){
@@ -21,22 +22,32 @@
     if(raw&&!localStorage.getItem('eb-before-simple-v1'))localStorage.setItem('eb-before-simple-v1',raw);
     localStorage.setItem(KEY,JSON.stringify(next));data=next;
   }
-  function stockOptions(samples=false){return I.balance(data,active).rows.filter(r=>(samples?r.sampleQuantity:r.commercialQuantity)>0).map(r=>[JSON.stringify([r.location,r.tag]),r.location+' · '+r.tag+' ('+num(samples?r.sampleQuantity:r.commercialQuantity)+' bot.)']);}
+  function stockOptions(samples=false){return allBuckets().map(r=>[JSON.stringify([r.location,r.tag]),r.location+' · '+r.tag+' ('+num(samples?r.sampleQuantity:r.commercialQuantity)+' bot.)']);}
   function selectedBucket(id){try{return JSON.parse($s(id).value);}catch(e){return['','Por clasificar'];}}
   function selectedSource(arr){return arr.find(([v])=>JSON.parse(v)[0]===preferred)?.[0]||arr[0]?.[0]||'';}
   function bind(id,fn){if($s(id))$s(id).onclick=fn;}
   function safeData(){data=freshData();return data;}
-  function listSales(id){return I.sales(data,id).slice().reverse().map(s=>{const st=I.saleStatus(s,today());return '<article class="simple-record"><div><strong>'+pretty(s.quantity)+'</strong><span>'+esc(s.customer||'Cliente no identificado')+'</span><small>'+esc(s.from||'Origen no recordado')+' · '+esc(s.date||'Fecha no recordada')+(s.mode==='historical'?' · No descontada: anterior al conteo':' · Descontada de bodega')+'</small></div><div><b>'+fmt(s.totalCents,s.currency)+'</b><small>'+esc(st.status)+'</small>'+(st.pendingCents>0?'<button class="textbtn" data-simple-payment="'+esc(s.id)+'">Registrar pago</button>':'')+(s.mode==='historical'&&!s.stockEffect&&!s.shipmentId?'<button class="secondary" data-apply-sale="'+esc(s.id)+'">Descontar de bodega</button>':'')+window.EBEditUI.buttons('sale',s.id)+'</div>'+window.EBEditUI.payments(s)+'</article>';}).join('')||'<p class="muted">No has registrado ventas de este lote.</p>';}
+
+  const hAttrs=(kind,from,to='')=>' data-history-entry data-history-kind="'+kind+'" data-history-from="'+esc(from||'')+'" data-history-to="'+esc(to||'')+'"';
+  function applyHistoryFilter(){
+    const root=document.querySelector('.simple-history');if(!root)return;
+    historyLocation=$s('history-warehouse').value;const counts={sale:0,move:0,sample:0,count:0};
+    root.querySelectorAll('[data-history-entry]').forEach(el=>{const a=el.dataset.historyFrom||'',b=el.dataset.historyTo||'';const show=!historyLocation||(historyLocation==='__unknown__'?!a&&!b:a===historyLocation||b===historyLocation);el.hidden=!show;if(show)counts[el.dataset.historyKind]++;});
+    $s('history-counts').textContent=(historyLocation==='__unknown__'?'Sin bodega registrada':historyLocation||'Todas las bodegas')+' · '+counts.sale+' ventas · '+counts.move+' movimientos · '+counts.sample+' muestras · '+counts.count+' ajustes';
+    $s('history-empty').hidden=Object.values(counts).some(n=>n>0);
+  }
+  function listSales(id){return I.sales(data,id).slice().reverse().map(s=>{const st=I.saleStatus(s,today());return '<article class="simple-record"'+hAttrs('sale',s.from)+'><div><strong>'+pretty(s.quantity)+'</strong><span>'+esc(s.customer||'Cliente no identificado')+'</span><small>'+esc(s.from||'Origen no recordado')+' · '+esc(s.date||'Fecha no recordada')+(s.mode==='historical'?' · No descontada: anterior al conteo':' · Descontada de bodega')+'</small></div><div><b>'+fmt(s.totalCents,s.currency)+'</b><small>'+esc(st.status)+'</small>'+(st.pendingCents>0?'<button class="textbtn" data-simple-payment="'+esc(s.id)+'">Registrar pago</button>':'')+(s.mode==='historical'&&!s.stockEffect&&!s.shipmentId?'<button class="secondary" data-apply-sale="'+esc(s.id)+'">Descontar de bodega</button>':'')+window.EBEditUI.buttons('sale',s.id)+'</div>'+window.EBEditUI.payments(s)+'</article>';}).join('')||'<p class="muted">No has registrado ventas de este lote.</p>';}
   function open(id,tab='count',from){
     try{
       safeData();const l=data.lots.find(l=>l.id===id);if(!l)throw Error('Guarda primero los costos del lote.');
-      active=id;screen=tab;preferred=from||preferred;const b=I.reconciliation(data,id),p=PRODUCTS[l.p]||PRODUCTS[0];view='stock';
-      const rows=I.locations(data).map(loc=>{const a=b.rows.filter(r=>r.location===loc&&r.quantity>0),n=a.reduce((n,r)=>n+r.quantity,0),samples=a.reduce((n,r)=>n+r.sampleQuantity,0);return a.length?'<article class="simple-location-wrap"><button class="simple-location" data-place="'+esc(loc)+'"><span>'+esc(loc)+'</span><b>'+num(n)+' <small>bot.</small></b><small>'+cases(n)+' · '+num(n/480)+' pallets'+(samples?' · '+num(samples)+' muestras':'')+'</small></button>'+a.map(r=>{const key=esc(JSON.stringify([r.location,r.tag]));return '<div class="stock-record-actions"><span>'+esc(r.tag)+' · '+num(r.quantity)+' bot.</span><div class="record-buttons"><button class="textbtn" data-stock-edit="'+key+'">Editar</button><button class="textbtn danger-text" data-stock-delete="'+key+'">Eliminar</button></div></div>';}).join('')+'</article>':'';}).join('');
+      if(active!==id)historyLocation='';active=id;screen=tab;preferred=from||preferred;const b=I.reconciliation(data,id),p=PRODUCTS[l.p]||PRODUCTS[0];view='stock';
+      const rows=I.locations(data).map(loc=>{const a=b.rows.filter(r=>r.location===loc&&(r.quantity!==0||r.sampleQuantity!==0)),n=a.reduce((n,r)=>n+r.quantity,0),samples=a.reduce((n,r)=>n+r.sampleQuantity,0);return a.length?'<article class="simple-location-wrap"><button class="simple-location" data-place="'+esc(loc)+'"><span>'+esc(loc)+'</span><b>'+num(n)+' <small>bot.</small></b><small>'+cases(n)+' · '+num(n/480)+' pallets'+(samples?' · '+num(samples)+' muestras':'')+'</small></button>'+a.map(r=>{const key=esc(JSON.stringify([r.location,r.tag]));return '<div class="stock-record-actions"><span>'+esc(r.tag)+' · '+num(r.quantity)+' bot.</span><div class="record-buttons"><button class="textbtn" data-stock-edit="'+key+'">Editar</button><button class="textbtn danger-text" data-stock-delete="'+key+'">Eliminar</button></div></div>';}).join('')+'</article>':'';}).join('');
       $s('app').innerHTML='<div class="heading"><div><div class="eyebrow">CONTROL DEL LOTE</div><h1>'+esc(id)+'</h1><p class="muted">'+esc(p.name)+' · '+esc(l.ml)+' ml'+(l.originWarehouse?' · Origen: '+esc(l.originWarehouse):'')+' · Costo por botella '+(Number.isFinite(l.unitCost)?cash(l.unitCost):'pendiente')+'</p></div><div class="simple-header-actions"><button class="secondary" id="simple-costs">Editar lote</button><button class="secondary danger-text" id="simple-delete-lot">Eliminar lote</button><button class="secondary" id="simple-back">Mis lotes</button></div></div>'+
         '<section class="card simple-overview"><div class="simple-metrics">'+metric('Producidas',b.produced,'simple-produced')+metric('Vendidas',b.sold,'simple-sold')+metric('Muestras entregadas',b.used,'simple-samples-used')+metric('Saldo en bodegas',b.total,'simple-current')+'</div><details class="simple-overview-details"'+(matchMedia('(min-width:701px)').matches?' open':'')+'><summary>Ver desglose y equivalencias</summary><p class="case-rule">Corrugado = caja de 6 botellas. Las sueltas se muestran aparte; no es inventario de cartón vacío.</p><p class="simple-account-note">Disponible para vender: '+pretty(b.commercialTotal)+'<br>Muestras aún en bodega: '+pretty(b.sampleTotal)+(b.transit?'<br>En tránsito: '+pretty(b.transit):'')+'</p></details><div class="reconciliation-line '+(b.unexplained?'difference':'balanced')+'"><b>'+(b.unexplained<0?'Registradas de más':'Por aclarar')+': <span id="simple-difference">'+num(Math.abs(b.unexplained))+'</span> botellas</b><span>'+cases(Math.abs(b.unexplained))+'</span><small>'+(b.unexplained>0?'Faltan por ubicar o explicar. No se inventan ventas ni pérdidas.':b.unexplained<0?'Revisa existencias y ventas antiguas sin descuento.':'Producidas = saldo + ventas + muestras entregadas'+(b.transit?' + en tránsito':'')+'.')+'</small>'+(b.unexplained<0&&I.sales(data,id).some(x=>x.mode==='historical')?'<button class="textbtn" id="review-undiscounted">Revisar ventas sin descuento</button>':'')+'</div></section>'+
+        ((b.stockWarnings||[]).length?'<p class="stock-warning" role="status">Saldo por cuadrar: '+b.stockWarnings.map(w=>esc(w.location)+' · '+esc(w.tag)+' · '+pretty(w.quantity)+(w.sampleQuantity<0?' · muestras '+num(w.sampleQuantity):'')).join(' / ')+'. Tus registros sí se guardaron.</p>':'')+
         '<div class="simple-tabs"><button id="simple-count-tab">Existencias</button><button id="simple-sale-tab">Venta</button><button id="simple-sample-tab">Muestras</button><button id="simple-move-tab">Mover bodega</button></div><div id="simple-error" class="alert" hidden role="alert"></div><section class="card" id="simple-form"></section>'+
         '<div class="section-toolbar"><h2>Lo que tienes por ubicación</h2><button class="textbtn" id="simple-print">Imprimir</button></div><div class="simple-location-grid">'+(rows||'<p class="muted">Indica dónde tienes botellas. No hace falta reconstruir envíos anteriores.</p>')+'</div>'+
-        '<details class="card simple-history"><summary>Ventas y movimientos registrados</summary><div class="card-body"><h3>Ventas</h3>'+listSales(id)+'<h3>Movimientos</h3>'+I.shipments(data,id).filter(x=>x.status!=='cancelled').slice().reverse().map(x=>'<article class="simple-record"><div><strong>'+esc(x.from||'Sin origen')+' → '+esc(x.to)+'</strong><small>'+pretty(x.quantity||0)+(x.purpose==='sample'||x.stockType==='sample'?' · Muestras · ingreso $0':'')+' · '+esc(x.status==='transit'?'En tránsito':'Registrado')+'</small></div>'+window.EBEditUI.buttons('move',x.id)+'</article>').join('')+'<h3>Muestras</h3>'+I.sampleActions(data,id).slice().reverse().map(x=>'<article class="simple-record"><div><strong>'+esc(x.location)+' · '+pretty(x.quantity)+'</strong><small>'+esc({reserve:'Marcadas como muestra',release:'Regresadas a comercial',consume:'Entregadas / consumidas'}[x.type])+'</small></div>'+window.EBEditUI.buttons('sample',x.id)+'</article>').join('')+'<details><summary>Correcciones de existencias</summary>'+(data.lotStockAdjustments||[]).filter(x=>x.lotId===id).slice().reverse().map(x=>'<p>'+esc(x.location)+' · '+num(x.previousQuantity)+' → '+num(x.quantity)+' bot. · '+esc(x.date)+'</p>').join('')+'</details><button class="textbtn" id="simple-samples">Muestras y pagos detallados</button></div></details>'+
+        '<details class="card simple-history"><summary>Ventas y movimientos registrados</summary><div class="card-body"><div class="history-filter">'+sel('history-warehouse','Ver historial por bodega',[['','Todas las bodegas'],...locations(),['__unknown__','Sin bodega registrada']],historyLocation)+'</div><p id="history-counts" class="small-note" aria-live="polite"></p><p id="history-empty" hidden>No hay registros para esta bodega.</p><h3>Ventas</h3>'+listSales(id)+'<h3>Movimientos</h3>'+I.shipments(data,id).filter(x=>x.status!=='cancelled').slice().reverse().map(x=>'<article class="simple-record"'+hAttrs('move',x.from,x.to)+'><div><strong>'+esc(x.from||'Sin origen')+' → '+esc(x.to)+'</strong><small>'+pretty(x.quantity||0)+(x.purpose==='sample'||x.stockType==='sample'?' · Muestras · ingreso $0':'')+' · '+esc(x.status==='transit'?'En tránsito':'Registrado')+'</small></div>'+window.EBEditUI.buttons('move',x.id)+'</article>').join('')+'<h3>Muestras</h3>'+I.sampleActions(data,id).slice().reverse().map(x=>'<article class="simple-record"'+hAttrs('sample',x.location)+'><div><strong>'+esc(x.location)+' · '+pretty(x.quantity)+'</strong><small>'+esc({reserve:'Marcadas como muestra',release:'Regresadas a comercial',consume:'Entregadas / consumidas'}[x.type])+'</small></div>'+window.EBEditUI.buttons('sample',x.id)+'</article>').join('')+'<details><summary>Correcciones de existencias</summary>'+(data.lotStockAdjustments||[]).filter(x=>x.lotId===id).slice().reverse().map(x=>'<p'+hAttrs('count',x.location)+'>'+esc(x.location)+' · '+num(x.previousQuantity)+' → '+num(x.quantity)+' bot. · '+esc(x.date)+'</p>').join('')+'</details><button class="textbtn" id="simple-samples">Muestras y pagos detallados</button></div></details>'+
         '<p class="small-note">Datos en este navegador. Usa Respaldo al terminar.</p>';
       bind('simple-costs',()=>loadLot(id,false));bind('simple-delete-lot',()=>window.EBEditUI.deleteLot(id));bind('simple-back',()=>show('lots'));bind('simple-count-tab',()=>form('count'));bind('simple-sale-tab',()=>form('sale'));bind('simple-sample-tab',()=>form('sample'));bind('simple-move-tab',()=>form('move'));
       bind('simple-samples',()=>window.EBCommerceUI.render(id,{samples:true}));
@@ -45,7 +56,7 @@
       document.querySelectorAll('[data-simple-payment]').forEach(btn=>btn.onclick=()=>paymentDialog(id,btn.dataset.simplePayment));
       document.querySelectorAll('[data-apply-sale]').forEach(btn=>btn.onclick=()=>applySaleDialog(id,btn.dataset.applySale));
       bind('review-undiscounted',()=>{const h=document.querySelector('.simple-history');h.open=true;h.scrollIntoView({block:'start',behavior:'smooth'});});
-      window.EBEditUI.bindRecords(id);form(tab);setNav();$s('nav-lots')?.classList.add('active');$s('mobile-save')?.classList.add('hidden');window.scrollTo(0,0);
+      $s('history-warehouse').onchange=applyHistoryFilter;applyHistoryFilter();window.EBEditUI.bindRecords(id);form(tab);setNav();$s('nav-lots')?.classList.add('active');$s('mobile-save')?.classList.add('hidden');window.scrollTo(0,0);
     }catch(e){fail(e);}
   }
   function form(tab){
@@ -82,18 +93,18 @@
       if(screen==='count'){box.textContent=pretty(n)+' · Total del lote después: '+num(b.total-expected[0]+n)+' botellas.';return;}
       const [loc,tag]=selectedBucket('simple-source'),isGift=screen==='sample',history=screen==='sale'&&!isGift&&$s('simple-history').checked;
       const a=history?null:(isGift||screen==='sale')?b.rows.find(r=>r.location===loc&&r.tag===tag)?.quantity||0:I.available(data,active,loc,tag);
-      if(!history&&n>a)throw Error('Solo hay '+num(a)+' botellas disponibles en el origen.');
+      const warning=!history&&n>a?' · Saldo negativo por cuadrar; puedes guardar.':'';
       if(isGift&&$s('simple-sample-action').value!=='consume'){
         const reserve=$s('simple-sample-action').value==='reserve',available=I.available(data,active,loc,tag,reserve?'commercial':'sample');
-        if(n>available)throw Error('Solo hay '+num(available)+' botellas para esta operación.');
+        // Known operations remain recordable.
         box.textContent=pretty(n)+(reserve?' para reservar.':' para liberar.');return;
       }
       if(isGift){box.textContent=pretty(n)+' entregadas · Ingreso $0 · Saldo total: '+pretty(b.total-n);return;}
       if(screen==='sale'){
         const p=$s('simple-price').value.trim().replace(',','.');const total=p?fmt(I.quote(n,p,'bottle').totalCents,$s('simple-currency').value):'Precio pendiente';
-        const reserved=history?0:Math.max(0,n-I.available(data,active,loc,tag));
-        box.textContent=pretty(n)+' · '+total+(reserved?' · Se usarán '+num(reserved)+' botellas reservadas como muestra para esta venta.':'')+(history?' · No cambia las existencias.':' · Saldo en origen: '+pretty(a-n)+' · Saldo total: '+pretty(b.total-n));
-      }else box.textContent=pretty(n)+' · '+loc+': '+num(a)+' → '+num(a-n)+' · '+'Total general sin cambio.';
+        const reserved=history?0:Math.min(Math.max(0,n-I.available(data,active,loc,tag)),Math.max(0,I.available(data,active,loc,tag,'sample')));
+        box.textContent=pretty(n)+' · '+total+(reserved?' · Se usarán '+num(reserved)+' botellas reservadas como muestra para esta venta.':'')+(history?' · No cambia las existencias.':' · Saldo en origen: '+pretty(a-n)+' · Saldo total: '+pretty(b.total-n)+warning);
+      }else box.textContent=pretty(n)+' · '+loc+': '+num(a)+' → '+num(a-n)+' · '+'Total general sin cambio.'+warning;
     }catch(e){box.textContent=$s('simple-amount')?.value?e.message:'Escribe la cantidad. Acepta 2.5 pallets o 0.5 pallet.';}
   }
   function save(){
@@ -101,7 +112,7 @@
       const amount=$s('simple-amount').value,unit=$s('simple-unit').value,input={id:formId,amount,unit,stamp:stamp()};
       if(screen==='count'){
         preferred=$s('simple-location').value;
-        Object.assign(input,{location:preferred,tag:$s('simple-tag').value,samples:Math.min(expected[1],I.quantity(amount,unit,true)),expected});write(d=>I.countStock(d,active,input,today()));
+        Object.assign(input,{location:preferred,tag:$s('simple-tag').value,samples:Math.max(0,Math.min(expected[1],I.quantity(amount,unit,true))),expected});write(d=>I.countStock(d,active,input,today()));
       }else{
         const [from,tag]=selectedBucket('simple-source');Object.assign(input,{from,tag});preferred=from||preferred;
         if(screen==='sale'){
@@ -109,7 +120,7 @@
           write(d=>{
             const date=today();
             if($s('simple-history').checked)return I.knownSale(d,active,input,date);
-            const reserved=Math.max(0,I.quantity(amount,unit)-I.available(d,active,from,tag));
+            const reserved=Math.min(Math.max(0,I.quantity(amount,unit)-I.available(d,active,from,tag)),Math.max(0,I.available(d,active,from,tag,'sample')));
             if(reserved)d=I.sampleAction(d,active,{id:formId+'-release',type:'release',location:from,tag,unit:'bottle',amount:reserved,date,stamp:input.stamp,notes:'Reclasificación para venta '+formId},date);
             return I.sellStock(d,active,input,date);
           });
@@ -120,7 +131,7 @@
           Object.assign(input,{to:$s('simple-destination').value,isSample:false,stockType:'commercial',cost:$s('simple-freight').value.trim().replace(',','.'),currency:$s('simple-currency').value});write(d=>I.moveStock(d,active,input,today()));
         }
       }
-      toast(screen==='count'?'Existencias actualizadas.':screen==='sale'?'Venta registrada.':screen==='sample'?'Operación de muestras registrada.':'Origen y destino actualizados.');open(active,screen,preferred);
+      toast(screen==='count'?'Existencias actualizadas.':screen==='sale'?((I.balance(data,active).stockWarnings||[]).length?'Venta guardada. Saldo negativo por cuadrar.':'Venta registrada.'):screen==='sample'?'Operación de muestras registrada.':'Origen y destino actualizados.');open(active,screen,preferred);
     }catch(e){fail(e);}
   }
   function applySaleDialog(id,saleId){
@@ -128,7 +139,7 @@
     const choices=stockOptions(),token=JSON.stringify(sale),modal=document.createElement('dialog');modal.className='eb-modal';
     modal.innerHTML='<h2>Descontar venta ya registrada</h2><p>'+pretty(sale.quantity)+'. Se conserva la venta, su precio y sus pagos. No se crea otra venta.</p>'+sel('apply-sale-source','¿De qué bodega salieron?',choices.length?choices:[['','No hay existencias']],choices.find(([v])=>JSON.parse(v)[0]===sale.from)?.[0]||choices[0]?.[0]||'')+'<p id="apply-sale-preview" class="simple-preview"></p><div class="wrap-actions"><button class="secondary" data-cancel>Cancelar</button><button class="primary" data-apply>Descontar una vez</button></div><p data-error role="alert"></p>';
     document.body.append(modal);modal.onclose=()=>modal.remove();modal.querySelector('[data-cancel]').onclick=()=>modal.close();
-    const preview=()=>{try{const [where,label]=selectedBucket('apply-sale-source'),b=I.balance(data,id),n=I.available(data,id,where,label);$s('apply-sale-preview').textContent=n<sale.quantity?'No hay suficiente producto en esta bodega.':'Saldo total: '+pretty(b.total)+' → '+pretty(b.total-sale.quantity);}catch(e){$s('apply-sale-preview').textContent=e.message;}};
+    const preview=()=>{try{const [where,label]=selectedBucket('apply-sale-source'),b=I.balance(data,id),n=I.available(data,id,where,label);$s('apply-sale-preview').textContent='Saldo total: '+pretty(b.total)+' → '+pretty(b.total-sale.quantity)+(n<sale.quantity?' · Saldo negativo por cuadrar; puedes guardar.':'');}catch(e){$s('apply-sale-preview').textContent=e.message;}};
     $s('apply-sale-source').onchange=preview;preview();
     modal.querySelector('[data-apply]').onclick=()=>{try{const [from,tag]=selectedBucket('apply-sale-source');write(d=>I.applySaleStock(d,id,saleId,{from,tag},token,{id:idNew(),stamp:stamp()},today()));modal.close();open(id,'sale',from);toast('Venta descontada una sola vez.');}catch(e){modal.querySelector('[data-error]').textContent=e.message;}};modal.showModal();
   }

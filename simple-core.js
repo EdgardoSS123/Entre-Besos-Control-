@@ -22,8 +22,8 @@
     I.balance(next,id);return next;
   }
   function packCounts(n) {
-    if(!Number.isSafeInteger(n)||n<0)fail('Cantidad de botellas inválida.');
-    return {bottles:n,fullCases:Math.floor(n/6),looseBottles:n%6,caseSize:6,equivalentCases:n/6};
+    if(!Number.isSafeInteger(n))fail('Cantidad de botellas inválida.');
+    return {bottles:n,...(n<0?{sign:-1}:{}),fullCases:Math.floor(Math.abs(n)/6),looseBottles:Math.abs(n)%6,caseSize:6,equivalentCases:n/6};
   }
   function initializeOrigin(d,id,where,now,stamp) {
     const l=lot(d,id);if(!I.locations(d).includes(where))fail('Selecciona una bodega origen válida.');

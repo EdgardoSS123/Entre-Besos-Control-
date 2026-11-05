@@ -40,3 +40,5 @@
   .simple-record{overflow-wrap:anywhere}
 }
 @media(max-width:360px){.simple-fields{grid-template-columns:minmax(0,1fr)}.simple-fields>.field:first-child{grid-column:auto}.simple-header-actions{grid-template-columns:1fr 1fr}.simple-header-actions #simple-back{grid-column:1/-1}}
+
+.simple-history [hidden]{display:none!important}.history-filter{max-width:420px;margin-bottom:10px}.history-filter select{min-height:48px;width:100%}.stock-warning{padding:14px 16px;border:1px solid #eacb8e;border-radius:12px;background:#fff4df;color:#755012;font-size:13px;line-height:1.55}@media print{.history-filter{display:none}}

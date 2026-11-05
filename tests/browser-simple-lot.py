@@ -31,7 +31,7 @@ with sync_playwright() as p:
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Horizontal overflow'
   page.reload(wait_until='networkidle');expect(page.locator('h1')).to_have_text('Mis lotes');assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")==snapshot
   page.locator('[data-simple-open]').click();page.locator('#simple-current').wait_for();assert page.locator('#simple-current').inner_text()=='960'
-  page.locator('#simple-move-tab').click();page.locator('#simple-amount').fill('10');page.locator('#simple-unit').select_option('pallet');page.locator('#simple-save').click();assert page.locator('#simple-error').is_visible()
+  page.locator('#simple-move-tab').click();page.locator('#simple-amount').fill('-10');page.locator('#simple-unit').select_option('pallet');page.locator('#simple-save').click();assert page.locator('#simple-error').is_visible()
   assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")==snapshot
   page.evaluate('window.print=()=>{}');page.locator('#simple-print').click();assert 'Por aclarar' in page.locator('#print-view').inner_text()
   assert not errors,errors

@@ -18,10 +18,11 @@
   function dateOK(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s;}
   function fail(s){throw new Error(s);}
   function pack(n,halves=false){
-    if(!Number.isSafeInteger(n)||n<0)fail('La cantidad debe ser un número entero de botellas.');
+    if(!Number.isSafeInteger(n))fail('La cantidad debe ser un número entero de botellas.');
+    const signed=n;n=Math.abs(n);
     const full=Math.floor(n/PALLET);let rest=n%PALLET;
     const half=halves?Math.floor(rest/HALF):0;rest-=half*HALF;
-    return{full,half,boxes:Math.floor(rest/BOX),bottles:rest%BOX,total:n,boxSize:BOX,palletSize:PALLET};
+    return{full,half,boxes:Math.floor(rest/BOX),bottles:rest%BOX,total:signed,...(signed<0?{sign:-1}:{}),boxSize:BOX,palletSize:PALLET};
   }
   function quantity(v,unit,allowZero=false){
     const factor={bottle:1,box:BOX,pallet:PALLET,half:HALF}[unit];
@@ -58,7 +59,7 @@
     });
     for(const a of (d.lotStockAdjustments||[]).filter(x=>x.lotId===id&&x.status!=='cancelled'))add(a.location,a.tag,a.delta);
     const rows=[...map.values()];
-    if(rows.some(r=>r.quantity<0))fail('El historial genera existencias negativas. No se modificó la información.');
+    if(rows.some(r=>!Number.isSafeInteger(r.quantity)))fail('Cantidad de inventario fuera de rango.');
     const atThirdParties=total(rows.filter(r=>locationInfo(d,r.location).kind!=='warehouse'));
     return{configured:!!start,complete:!!start?.complete,asOf:start?.asOf||null,rows,total:total(rows),transit,knownTotal:total(rows)+transit,atThirdParties,deliveredSales,opening:start};
   }
@@ -84,7 +85,7 @@
       if(grouped.has(key))grouped.get(key).quantity+=n;
       else{const item={location:r.location,tag:r.tag,quantity:n};rows.push(item);grouped.set(key,item);}
     });
-    if(total(rows)>Number(lot.bottles))fail('El inventario inicial supera las botellas calculadas de este lote. Revisa la producción o el conteo.');
+    // Differences remain visible for reconciliation.
     if(!rows.length&&!input.complete)fail('Agrega una existencia o confirma el conteo completo en cero.');
     const next=clone(d),record={lotId:id,asOf:input.asOf,rows,inputRows,complete:!!input.complete,notes:String(input.notes||'').slice(0,2000),updatedAt:input.stamp};
     next.inventoryOpenings=next.inventoryOpenings||[];
@@ -111,7 +112,7 @@
       const latest=shipments(d,id).filter(x=>!x.historical&&x.status!=='cancelled').map(x=>x.receivedDate||x.date).sort().pop();
       if(latest&&input.date<latest)fail('Registra los movimientos en orden de fecha para conservar las existencias.');
       const available=balance(d,id).rows.find(r=>r.location===input.from&&r.tag===input.tag)?.quantity||0;
-      if(n>available)fail('Solo hay '+available+' botellas de este lote y etiqueta en '+input.from+'.');
+      // Preserve known dispatches even when counts need reconciliation.
     }
     const known=!!input.costKnown,amount=known?Number(input.costAmount):null;
     if(known&&(input.costAmount===''||!Number.isFinite(amount)||amount<0||!CURRENCIES.includes(input.currency)))fail('Revisa importe y moneda del envío.');

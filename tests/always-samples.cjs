@@ -16,7 +16,7 @@ assert.equal(I.balance(d,'L').sampleTotal,12);assert.equal(I.available(d,'L','Si
 d=I.deliverSamples(d,'L',{id:'given',from:'Filipinas',tag:'Por clasificar',amount:6,unit:'bottle',stamp:day},day);
 b=I.reconciliation(d,'L');assert.equal(b.total,708);assert.equal(b.used,6);assert.equal(b.produced,714);assert.equal(b.sold,0);assert.equal(b.unexplained,0);
 assert.equal(d.lotSampleActions[0].income,0);assert.equal(d.lotSampleActions[0].receivable,0);
-assert.throws(()=>I.sellStock(d,'L',{id:'s',from:'Singapur',tag:'Por clasificar',amount:1,unit:'bottle',price:'1000',priceBasis:'bottle',currency:'MXN',payment:'paid',stamp:day},day),/muestras/);
+assert.equal(I.available(I.sellStock(d,'L',{id:'s',from:'Singapur',tag:'Por clasificar',amount:1,unit:'bottle',price:'1000',priceBasis:'bottle',currency:'MXN',payment:'paid',stamp:day},day),'L','Singapur','Por clasificar'),-1);
 // New origin can be marked all samples. No side effects on load or existing records.
 let all=I.initializeOrigin({...base,lots:[{...base.lots[0],originSamples:true}]},'L','Singapur',day,day);
 assert.equal(I.balance(all,'L').sampleTotal,714);assert.equal(I.balance(all,'L').commercialTotal,0);assert.equal(I.reconciliation(all,'L').used,0);
@@ -35,6 +35,6 @@ assert.equal(I.balance(mix,'L').total,702);assert.equal(I.balance(mix,'L').sampl
 mix=I.correctSample(mix,'L','mixed-gift',{location:'CDMX',tag:'Por clasificar',amount:3,unit:'bottle',type:'consume',date:day,notes:'Correction'},JSON.stringify(mix.lotSampleActions.at(-1)),m(),day);
 assert.equal(I.balance(mix,'L').total,711);assert.equal(I.balance(mix,'L').sampleTotal,2);assert.equal(I.reconciliation(mix,'L').used,3);
 mix=I.removeRecord(mix,'L','sample','mixed-gift',JSON.stringify(mix.lotSampleActions.at(-1)),m());assert.deepEqual(I.balance(mix,'L'),I.balance(before,'L'));
-assert.throws(()=>I.moveStock(before,'L',move('over','CDMX','Singapur',715),day),/Solo hay/);assert.throws(()=>I.deliverSamples(before,'L',{id:'overgift',from:'CDMX',tag:'Por clasificar',amount:715,unit:'bottle',stamp:day},day),/Solo hay/);
+assert.throws(()=>I.moveStock(before,'L',move('over','CDMX','Singapur',-715),day),/cantidad/i);assert.throws(()=>I.deliverSamples(before,'L',{id:'overgift',from:'CDMX',tag:'Por clasificar',amount:-715,unit:'bottle',stamp:day},day),/cantidad/i);
 assert.deepEqual(d.contacts,base.contacts);assert.deepEqual(d.documents,base.documents);assert.equal(base.inventoryOpenings,undefined);
-console.log('PASS ALWAYS SAMPLES: commercial-to-sample transfer, Singapore and third-country tracking, no sale/income, mixed source one step, delivery deductions, edits/reversal/undo compatibility, origin samples and overship protection.');
+console.log('PASS ALWAYS SAMPLES: commercial-to-sample transfer, Singapore and third-country tracking, no sale/income, mixed source one step, delivery deductions, edits/reversal/undo compatibility, origin samples and signed stock reconciliation.');
