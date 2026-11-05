@@ -1,0 +1,17 @@
+name: Shared data and materials checks
+on:
+  push:
+    branches: [work/shared-materials]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shared-source
+          path: /tmp/source.zip
+          retention-days: 2
