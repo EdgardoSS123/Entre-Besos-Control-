@@ -1,0 +1,126 @@
+name: Verify marketing and supplies inventories
+on:
+  push:
+    branches: [main, work/materials-inventories]
+    paths: ['materials*', 'tests/*materials*', '.github/workflows/materials.yml', 'control.html', 'Dockerfile']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Integrate reviewed navigation and static assets on development branch only
+        if: github.ref == 'refs/heads/work/materials-inventories'
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          def sha(s):
+              b=s.encode();return hashlib.sha1(('blob '+str(len(b))+'\0').encode()+b).hexdigest()
+          p=Path('control.html');s=p.read_text()
+          if 'materials.css' not in s:
+              assert sha(s)=='2aa7d8a881a1c758f802425296842b903d6d0181'
+              s=s.replace('</head>','<link rel="stylesheet" href="./materials.css?v=materials1"></head>',1)
+              buttons='<button data-materials="marketing" onclick="location.href=\'./materials.html?kind=marketing\'">Material marketing</button><button data-materials="supplies" onclick="location.href=\'./materials.html?kind=supplies\'">Insumos</button>'
+              s=s.replace('<button id="backup-nav"></button>',buttons+'<button id="backup-nav"></button>',1)
+              mobile='<button data-materials="marketing" onclick="location.href=\'./materials.html?kind=marketing\'"><span aria-hidden="true">◇</span>Marketing</button><button data-materials="supplies" onclick="location.href=\'./materials.html?kind=supplies\'"><span aria-hidden="true">▦</span>Insumos</button>'
+              s=s.replace('<button id="backup-mobile"></button>',mobile+'<button id="backup-mobile"></button>',1)
+              p.write_text(s)
+          assert s.count('data-materials="marketing"')==2 and s.count('data-materials="supplies"')==2
+          p=Path('index.html');s=p.read_text()
+          if "if(s==='Marketing'||s==='Insumos')" not in s:
+              assert sha(s)=='71e865aaf2f46f5a470625c0649e1487fa4295de'
+              old='function go(s){page=s;render();'
+              assert s.count(old)==1
+              s=s.replace(old,"function go(s){if(s==='Marketing'||s==='Insumos'){location.href='./materials.html?kind='+(s==='Marketing'?'marketing':'supplies');return;}page=s;render();",1)
+              old="['Reporte socios','Ventas','Documentos','Precios','CRM','Gastos','Marketing']"
+              assert s.count(old)==1
+              s=s.replace(old,"['Reporte socios','Ventas','Documentos','Precios','CRM','Gastos','Marketing','Insumos']",1)
+              p.write_text(s)
+          p=Path('Dockerfile');s=p.read_text()
+          if 'COPY materials-core.js' not in s:
+              assert sha(s)=='c0642553be998ac9951c97a44a7a6e2bc07cc473'
+              s=s.replace('FROM nginx:alpine','COPY materials-core.js materials-ui.js ./\nCOPY tests/materials.cjs ./tests/\nRUN node --check materials-core.js && node --check materials-ui.js && node tests/materials.cjs\n\nFROM nginx:alpine',1)
+              s=s.replace('COPY nginx.conf','COPY materials.html materials-core.js materials-ui.js materials.css /usr/share/nginx/html/\nCOPY nginx.conf',1)
+              s=s.replace('for asset in ','for asset in materials.html materials-core.js materials-ui.js materials.css ',1)
+              p.write_text(s)
+          PY
+      - name: Verify syntax and all ledger and inventory calculations
+        run: |
+          for file in *.js; do node --check "$file"; done
+          for file in tests/*.cjs; do node "$file"; done
+      - name: Prepare browser
+        run: |
+          python3 -m pip install playwright==1.56.0
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated development server
+        if: github.ref == 'refs/heads/work/materials-inventories'
+        run: |
+          cp index.html legacy.html
+          python3 tests/serve.py >/tmp/eb-materials-server.log 2>&1 &
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published application assets
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          paths=['control.html','index.html','materials.html','materials-core.js','materials-ui.js','materials.css']
+          for attempt in range(40):
+              try:
+                  for name in paths:
+                      public='index.html' if name=='control.html' else 'legacy.html' if name=='index.html' else name
+                      req=urllib.request.Request(base+public+'?verify=materials-'+str(time.time_ns()),headers={'Cache-Control':'no-cache'})
+                      assert urllib.request.urlopen(req,timeout=20).read()==Path(name).read_bytes(),name
+                  print('Verified exact published marketing, supplies and navigation files');break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(5)
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test isolated desktop and mobile inventory records
+        env:
+          EB_SCREENSHOTS: /tmp/eb-materials-checks
+        run: python3 tests/browser-materials.py
+      - name: Test current and legacy navigation without touching user records
+        run: |
+          python3 - <<'PY'
+          import os,shutil
+          from playwright.sync_api import sync_playwright,expect
+          base=os.environ['EB_TEST_URL']
+          with sync_playwright() as p:
+              browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
+              for width in [1440,390,375]:
+                  context=browser.new_context(viewport={'width':width,'height':950})
+                  page=context.new_page();page.goto(base)
+                  page.locator('[data-materials="marketing"]:visible').first.click()
+                  expect(page.locator('#material-name')).to_have_value('')
+                  page.locator('[data-lots]:visible').first.click()
+                  page.locator('[data-materials="supplies"]:visible').first.click()
+                  expect(page.locator('#material-name')).to_have_value('')
+                  assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                  context.close()
+              context=browser.new_context();page=context.new_page();page.goto(base+'legacy.html');page.evaluate("go('Marketing')")
+              expect(page.locator('#material-name')).to_have_value('')
+              context.close();browser.close()
+          print('PASS navigation: marketing and supplies from current desktop/mobile menus and legacy modules')
+          PY
+      - name: Commit only tested integration files on development branch
+        if: github.ref == 'refs/heads/work/materials-inventories'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add control.html index.html Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar inventarios de marketing e insumos con captura libre, cantidades y costo total'
+            git push origin HEAD:work/materials-inventories
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: materials-inventory-review
+          path: /tmp/eb-materials-checks
+          retention-days: 2
