@@ -40,8 +40,9 @@ if 'const cases=n=>window.EBPackages.describe(n);' not in s:
 p=Path('lot-operations.js');s=p.read_text()
 if 'return window.EBPackages.describe(n);' not in s:
     s,count=re.subn(r'  function lotCardCases\(n\)\{.*?\n  \}', '  function lotCardCases(n){return window.EBPackages.describe(n);\n  }',s,count=1,flags=re.S);assert count==1
-    old="(n<0?'−':'')+number(Math.floor(Math.abs(n)/6))+' corrugados'+(Math.abs(n)%6?' + '+number(Math.abs(n)%6)+' botellas sueltas':'')+' · '+number(n/480)+' pallets'"
-    assert s.count(old)==1;s=s.replace(old,'window.EBPackages.describe(n)',1);p.write_text(s)
+    old="(n<0?'−':'')+number(Math.floor(Math.abs(n)/6))+' corrugados'+(Math.abs(n)%6?' + '+number(Math.abs(n)%6)+' botellas sueltas':'')+' · '+number(n/480)+' pallets</p>'"
+    assert s.count(old)==1,('warehouse packaging',s.count(old))
+    s=s.replace(old,"window.EBPackages.describe(n)+'</p>'",1);p.write_text(s)
 p=Path('reports-data.js');s=p.read_text()
 if 'const packages=' not in s:
     s=s.replace("  const names=", "  const packages=typeof module!=='undefined'&&module.exports?require('./packaging.js'):root.EBPackages;\n  const names=",1)
