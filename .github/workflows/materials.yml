@@ -89,21 +89,42 @@ jobs:
         run: |
           python3 - <<'PY'
           import os,shutil
+          from pathlib import Path
           from playwright.sync_api import sync_playwright,expect
           base=os.environ['EB_TEST_URL']
+          output=Path('/tmp/eb-materials-checks');output.mkdir(exist_ok=True,parents=True)
           with sync_playwright() as p:
               browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
               for width in [1440,390,375]:
+                  print('Checking navigation at',width,flush=True)
                   context=browser.new_context(viewport={'width':width,'height':950})
-                  page=context.new_page();page.goto(base)
-                  page.locator('[data-materials="marketing"]:visible').first.click()
-                  expect(page.locator('#material-name')).to_have_value('')
-                  page.locator('[data-lots]:visible').first.click()
-                  page.locator('[data-materials="supplies"]:visible').first.click()
-                  expect(page.locator('#material-name')).to_have_value('')
-                  assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                  context.close()
-              context=browser.new_context();page=context.new_page();page.goto(base+'legacy.html');page.evaluate("go('Marketing')")
+                  page=context.new_page();page.goto(base,wait_until='load')
+                  nav='.sidebar' if width>950 else '.mobile-nav'
+                  try:
+                      with page.expect_navigation(wait_until='load'):
+                          page.locator(nav+' [data-materials="marketing"]').click()
+                      expect(page).to_have_url(base+'materials.html?kind=marketing')
+                      expect(page.locator('#material-name')).to_have_value('')
+                      with page.expect_navigation(wait_until='load'):
+                          page.locator(nav+' [data-lots]').click()
+                      expect(page).to_have_url(base)
+                      expect(page.locator(nav+' [data-materials="supplies"]')).to_be_visible()
+                      with page.expect_navigation(wait_until='load'):
+                          page.locator(nav+' [data-materials="supplies"]').click()
+                      expect(page).to_have_url(base+'materials.html?kind=supplies')
+                      expect(page.locator('#material-name')).to_have_value('')
+                      assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                      print('PASS navigation',width,flush=True)
+                  except Exception:
+                      page.screenshot(path=str(output/f'navigation-failure-{width}.png'),full_page=True)
+                      print('Failed URL:',page.url,flush=True)
+                      raise
+                  finally:
+                      context.close()
+              context=browser.new_context();page=context.new_page();page.goto(base+'legacy.html',wait_until='load')
+              with page.expect_navigation(wait_until='load'):
+                  page.evaluate("go('Marketing')")
+              expect(page).to_have_url(base+'materials.html?kind=marketing')
               expect(page.locator('#material-name')).to_have_value('')
               context.close();browser.close()
           print('PASS navigation: marketing and supplies from current desktop/mobile menus and legacy modules')
