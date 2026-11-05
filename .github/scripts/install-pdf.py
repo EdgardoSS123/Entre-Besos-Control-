@@ -1,10 +1,10 @@
 from pathlib import Path
 
-def replace(path,old,new):
+def replace(path,old,new,count=1):
     p=Path(path);s=p.read_text()
     if new in s:return
-    assert s.count(old)==1,(path,old[:100],s.count(old))
-    p.write_text(s.replace(old,new,1))
+    assert s.count(old)==count,(path,old[:100],s.count(old))
+    p.write_text(s.replace(old,new,count))
 
 replace('materials-ui.js',"const KEY='eb-v1', C=window.EBMaterials", "const KEY='eb-v1', OTHER='__eb_other__', C=window.EBMaterials")
 replace('materials-ui.js',"options(names,'Selecciona un insumo')+'</select>","options(names,'Selecciona un insumo')+'<option value=\"'+OTHER+'\">Otros</option></select>")
@@ -39,8 +39,7 @@ for name in ['control.html','materials.html']:
         p.write_text(s)
 
 replace('materials.html','./materials-ui.js?v=materials1','./materials-ui.js?v=others-pdf1')
-# Avoid a MutationObserver loop when a print button is already labelled PDF.
-replace('reports-pdf.js',"b.textContent='PDF';b.title='Descargar reporte PDF con logo';", "if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar reporte PDF con logo';")
+replace('reports-pdf.js',"b.textContent='PDF';b.title='Descargar reporte PDF con logo';", "if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar reporte PDF con logo';",2)
 
 p=Path('Dockerfile');s=p.read_text()
 if 'COPY pdf-deps/' not in s:
