@@ -1,0 +1,71 @@
+name: Verify shared PC and mobile data
+on:
+  push:
+    branches: [main, work/shared-data]
+    paths: ['shared*', 'server.cjs', 'tests/*shared*', '.github/scripts/install-shared.py', '.github/workflows/shared-data.yml', 'Dockerfile', 'control.html', 'materials.html']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate shared data only on development branch
+        if: github.ref == 'refs/heads/work/shared-data'
+        run: python3 .github/scripts/install-shared.py
+      - name: Verify ledger arithmetic and shared database safeguards
+        env:
+          EB_REPORT_FIXTURE: /tmp/eb-report-fixture.json
+        run: |
+          for file in *.js *.cjs; do node --check "$file"; done
+          for file in tests/*.cjs; do node --experimental-sqlite "$file"; done
+      - name: Prepare isolated browser and PDF runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0 pymupdf==1.26.5
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Verify two independent devices and read-only partner
+        env:
+          EB_SCREENSHOTS: /tmp/eb-shared-checks
+        run: python3 tests/browser-shared.py
+      - name: Verify complete production container build
+        if: github.ref == 'refs/heads/work/shared-data'
+        run: docker build -t entre-besos-shared-verified .
+      - name: Commit tested integration only
+        if: github.ref == 'refs/heads/work/shared-data'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Dockerfile control.html materials.html index.html pwa.js reports-pdf.js shared.js
+          if ! git diff --cached --quiet; then git commit -m 'Integrar base compartida protegida y acceso EB1/EB2 sin alterar registros'; git push origin HEAD:work/shared-data; fi
+      - name: Verify deployed runtime and authentication boundary without user data
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,json,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(50):
+              try:
+                  health=json.loads(urllib.request.urlopen(base+'healthz',timeout=15).read());assert health['shared'] and health['version']=='shared-v1'
+                  for name in ['shared.js','shared.css','control.html','materials.html']:
+                      public='index.html' if name=='control.html' else name
+                      assert urllib.request.urlopen(base+public+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  session=json.loads(urllib.request.urlopen(base+'api/session',timeout=15).read());assert session['authenticated'] is False
+                  try: urllib.request.urlopen(base+'api/state',timeout=15);raise AssertionError('Anonymous read must be rejected')
+                  except urllib.error.HTTPError as e: assert e.code==401
+                  print('PASS published shared runtime: persistent database health, exact deployed assets and no anonymous access. No real inventory was read or changed.');break
+              except Exception:
+                  if attempt==49:raise
+                  time.sleep(6)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shared-devices-review
+          path: /tmp/eb-shared-checks
+          retention-days: 2
