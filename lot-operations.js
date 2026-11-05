@@ -42,7 +42,43 @@
   };
   saveLot=function(){base.saveLot();};
   setNav=function(){base.setNav();['nav-warehouses','mobile-warehouses'].forEach(id=>by(id)?.classList.toggle('active',view==='warehouses'));if(view==='stock'){by('nav-lots').classList.add('active');by('mobile-lots').classList.add('active');}};
-  drawLots=function(){base.drawLots();document.querySelectorAll('.saved-lot').forEach(card=>{const id=card.querySelector('[data-edit]').dataset.edit,b=savedBalance(id),btn=document.createElement('button');btn.className='secondary stock-action';btn.textContent=b.configured?'Inventario y envíos':'Registrar dónde está';btn.onclick=()=>renderStock(id);card.querySelector('.actions').append(btn);const saleButton=document.createElement('button');saleButton.className='secondary';saleButton.textContent='Ventas y muestras';saleButton.onclick=()=>window.EBCommerceUI.render(id);card.querySelector('.actions').append(saleButton);const note=document.createElement('p');note.textContent=b.configured?number(b.total)+' botellas en bodegas · '+number(b.transit)+' en tránsito':'Inventario actual pendiente de capturar';card.children[1].append(note);});};
+
+  function lotCardCases(n){
+    const a=Math.abs(n),whole=Math.floor(a/6),loose=a%6;
+    return (n<0?'−(':'')+number(whole)+' corrugados'+(loose?' + '+number(loose)+' bot. sueltas':'')+(n<0?')':'');
+  }
+  function lotCardSummary(l,b){
+    const metric=(key,label,value)=>'<div class="lot-card-metric" data-summary="'+key+'"><span>'+label+'</span><strong data-summary-'+key+'>'+ (value===null?'Sin capturar':number(value))+'</strong><small>'+(value===null?'Registra el inventario actual':'botellas · '+lotCardCases(value))+'</small></div>';
+    let html='<div class="lot-card-metrics">'+metric('produced','Producidas',Number(l.bottles||0))+metric('current','Saldo actual',b.configured?b.total:null)+'</div>';
+    if(b.error)return html+'<p class="lot-card-warning">No se pudo calcular el saldo: '+esc(b.error)+'</p>';
+    html+='<p class="lot-card-activity">Vendidas: <b>'+number(b.sold||0)+'</b> · Muestras entregadas: <b>'+number(b.used||0)+'</b></p>';
+    if(!b.configured)return html;
+    if(b.unexplained)html+='<p class="lot-card-warning">'+(b.unexplained<0?'Registradas de más: ':'Por aclarar: ')+number(Math.abs(b.unexplained))+' botellas</p>';
+    const initial=(b.opening?.rows||[]).reduce((sum,r)=>sum+r.quantity,0);
+    const adjustments=(data.lotStockAdjustments||[]).filter(a=>a.lotId===l.id&&a.status!=='cancelled').reduce((sum,a)=>sum+a.delta,0);
+    const line=(label,n)=>'<div><dt>'+label+'</dt><dd>'+number(n)+' bot.</dd></div>';
+    html+='<details class="lot-card-calculation"><summary>Ver cálculo del saldo</summary><dl>'+line('Inventario inicial registrado',initial)+line('Ajustes de conteo (+/−)',adjustments)+line('Ventas descontadas',-(b.deliveredSales||0))+line('Muestras entregadas',-(b.samplesUsed||0))+line('En tránsito, fuera de bodega',-b.transit)+line('Saldo actual en bodegas',b.total)+'</dl><p class="small-note">Disponibles para vender: '+number(b.commercialTotal)+' botellas. Muestras aún en bodega: '+number(b.sampleTotal)+'.</p>';
+    const past=(b.sold||0)-(b.deliveredSales||0);
+    if(past)html+='<p class="small-note">Ventas anteriores al conteo: '+number(past)+'. Ya estaban fuera del inventario inicial; no se descuentan otra vez.</p>';
+    html+='<p class="small-note">Saldo según registros. Los traslados entre bodegas no cambian el total. La producción no se vuelve a sumar al inventario.</p></details>';
+    return html;
+  }
+  drawLots=function(){
+    try{data=freshData();}catch(e){toast('No se pudo leer el saldo actual. '+e.message);return;}
+    base.drawLots();
+    document.querySelectorAll('.saved-lot').forEach(card=>{
+      const id=card.querySelector('[data-edit]').dataset.edit,l=data.lots.find(x=>x.id===id);
+      if(!l)return;
+      let b;try{b=window.EBLedger.reconciliation(data,id);}catch(e){b={configured:false,error:e.message};}
+      card.dataset.lotSummary=id;
+      const label=document.createElement('span');label.className='lot-card-cost-label';label.textContent='COSTO POR BOTELLA';
+      const price=card.querySelector('.price'),cost=document.createElement('div');cost.className='lot-card-cost';price.before(cost);cost.append(label,price);
+      const info=card.children[1],meta=info.querySelector('p');if(meta)meta.textContent=(l.date||'Fecha pendiente')+' · '+(l.ml||'—')+' ml';
+      const btn=document.createElement('button');btn.className='secondary stock-action';btn.textContent=b.configured?'Inventario y envíos':'Registrar dónde está';btn.onclick=()=>renderStock(id);card.querySelector('.actions').append(btn);
+      const saleButton=document.createElement('button');saleButton.className='secondary';saleButton.textContent='Ventas y muestras';saleButton.onclick=()=>window.EBCommerceUI.render(id);card.querySelector('.actions').append(saleButton);
+      const summary=document.createElement('section');summary.className='lot-card-summary';summary.setAttribute('aria-label','Producción y saldo del lote '+id);summary.innerHTML=lotCardSummary(l,b);info.append(summary);
+    });
+  };
   function write(action){
     if(storageError)throw Error(storageError);
     const raw=localStorage.getItem(KEY),latest=freshData(),next=action(latest);
