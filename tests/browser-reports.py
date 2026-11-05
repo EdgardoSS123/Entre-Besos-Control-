@@ -9,7 +9,7 @@ seed=json.loads(Path('/tmp/eb-report-fixture.json').read_text())
 def check_pdf(path,required=(),excluded=(),min_pages=1):
     assert path.read_bytes().startswith(b'%PDF-'),path
     doc=pymupdf.open(path);assert len(doc)>=min_pages
-    content='\n'.join(p.get_text() for p in doc)
+    content=' '.join(' '.join(p.get_text() for p in doc).split())
     for term in required:assert term in content,(str(path),term,content[:500])
     for term in excluded:assert term not in content,(str(path),term)
     for i,page in enumerate(doc):
@@ -56,7 +56,6 @@ with sync_playwright() as p:
     ctx=browser.new_context(accept_downloads=True);page=ctx.new_page();page.goto(BASE+'materials.html?kind=marketing',wait_until='load')
     long=json.loads(json.dumps(seed));long['materials']=[{'name':f'Objeto {i:03d} · Menús, exhibidores y materiales para socios','presentation':'Edición especial para eventos y degustaciones','qty':i+1,'totalCost':(i+1)*150,'loc':'CDMX','currency':'MXN'} for i in range(80)]
     page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',long);page.reload();path=download(page,'marketing-multipagina.pdf');check_pdf(path,['Objeto 000','Objeto 079','Menús'],min_pages=3)
-    # The report must fail visibly rather than create an unbranded file if the logo is unavailable.
     failctx=browser.new_context(accept_downloads=True);failpage=failctx.new_page();failpage.route('**/EB%20logo.jpg',lambda route:route.abort());failpage.goto(BASE+'materials.html?kind=marketing',wait_until='load')
     failpage.locator('#eb-report-pdf').click();expect(failpage.locator('#eb-pdf-status')).to_contain_text('No se generó',timeout=15000)
     failctx.close();ctx.close();browser.close()
