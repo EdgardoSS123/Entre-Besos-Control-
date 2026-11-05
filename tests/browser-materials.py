@@ -34,7 +34,7 @@ with sync_playwright() as p:
   with page.expect_download() as event:page.locator('[data-backup]:visible').first.click()
   backup=Path(event.value.path());b=json.loads(backup.read_text());assert b['materials'][1]['qty']==30;assert len(b['supplies'])==1;assert b['lots']==seed['lots']
   page.locator('#material-name').select_option('Tapones');page.locator('#material-location').select_option('Oaxaca');page.locator('#material-qty').fill('5');page.locator('#material-cost').fill('10')
-  page.evaluate('Storage.prototype.setItem = function(){throw new DOMException("Sin espacio","QuotaExceededError")};')
+  page.evaluate('()=>{Storage.prototype.setItem = function(){throw new DOMException("Sin espacio","QuotaExceededError")};}')
   page.locator('#material-save').click();expect(page.locator('#material-error')).to_contain_text('No se guardó');expect(page.locator('#material-qty')).to_have_value('5')
   assert not errors,errors;ctx.close();print('PASS MATERIALS UI',width)
  browser.close()
