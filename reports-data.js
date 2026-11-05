@@ -1,13 +1,14 @@
 /* Reporting only: never reconciles, migrates, or writes business records. */
 (function(root){
   'use strict';
+  const packages=typeof module!=='undefined'&&module.exports?require('./packaging.js'):root.EBPackages;
   const names=['Espadín Capón','Cupreata','Dark Blend'];
   const number=n=>new Intl.NumberFormat('es-MX',{maximumFractionDigits:3}).format(n);
   const valid=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
   const money=(n,c='MXN')=>valid(n)?new Intl.NumberFormat('es-MX',{style:'currency',currency:/^[A-Z]{3}$/.test(c)?c:'MXN'}).format(Number(n))+' '+c:'Sin capturar';
   const text=v=>String(v??'');
   function array(d,k){if(d[k]===undefined)return[];if(!Array.isArray(d[k])||d[k].some(x=>!x||typeof x!=='object'))throw Error('No se puede leer '+k+'. No se modificaron tus datos.');return d[k];}
-  function cases(n){const abs=Math.abs(n);return(n<0?'-':'')+number(Math.floor(abs/6))+' corrugados'+(abs%6?' + '+number(abs%6)+' bot. sueltas':'');}
+  function cases(n){return packages.describe(n,true);}
   function quantity(n){return number(n)+' bot.\n'+cases(n);}
   const metric=(label,n)=>({label,value:number(n),note:cases(n)});
   function section(title,head,body,right=[]){return{title,head,body,right};}
@@ -68,7 +69,7 @@
     if(!ctx.lotId&&ctx.type!=='warehouse'){
       for(const kind of ['marketing','supplies']){const m=materials(d,kind);model.sections.push(m.section);if(m.rows.length)model.sections.push(section('Costo capturado · '+(kind==='marketing'?'marketing':'insumos'),['Moneda','Total conocido','Sin costo capturado'],Object.entries(m.totals).map(([c,n])=>[c,money(n,c),number(m.missing)+' registros']),[1,2]));}
     }
-    model.notes.push('1 corrugado equivale a 6 botellas; las botellas sueltas se muestran aparte. No es inventario de cajas vacías.','Las muestras reservadas siguen físicamente en la bodega; las entregadas se descuentan. Un traslado interno cambia la ubicación, no la producción.','Las diferencias y saldos negativos se conservan tal como resultan de tus registros. Las ventas históricas anteriores al conteo no se descuentan otra vez.','Las monedas se presentan por separado, sin aplicar un tipo de cambio. Los registros sin precio o costo no se consideran gratuitos.');
+    model.notes.push('1 caja (corrugado) = 6 botellas; 1 pallet = 80 cajas (480 botellas). Las cajas del desglose están fuera de los pallets; las sueltas están fuera de las cajas. No es inventario de cartón vacío.','Las muestras reservadas siguen físicamente en la bodega; las entregadas se descuentan. Un traslado interno cambia la ubicación, no la producción.','Las diferencias y saldos negativos se conservan tal como resultan de tus registros. Las ventas históricas anteriores al conteo no se descuentan otra vez.','Las monedas se presentan por separado, sin aplicar un tipo de cambio. Los registros sin precio o costo no se consideran gratuitos.');
     return model;
   }
   const api={build,cases,quantity,materials,money};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.EBReportData=api;

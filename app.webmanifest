@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "Entre Besos Control",
+  "short_name": "Entre Besos",
+  "description": "Control interno de lotes, bodegas, ventas, insumos y marketing.",
+  "lang": "es-MX",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f9",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/icons/eb-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/eb-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/eb-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -24,6 +24,10 @@ RUN sh ./build-pdf.sh
 COPY reports-data.js reports-pdf.js ./
 RUN node --check reports-data.js && node --check reports-pdf.js
 
+COPY packaging.js device-backup.js pwa.js ./
+COPY tests/device-packaging.cjs ./tests/
+RUN node --check packaging.js && node --check pwa.js && node --check device-backup.js && node tests/device-packaging.cjs
+
 FROM nginx:alpine
 # Preserve previous modules and data keys. Publish the tested lot workspace.
 COPY index.html /usr/share/nginx/html/legacy.html
@@ -38,9 +42,11 @@ COPY corrections-core.js corrections-ui.js corrections.css /usr/share/nginx/html
 COPY materials.html materials-core.js materials-ui.js materials.css /usr/share/nginx/html/
 COPY reports-data.js reports-pdf.js /usr/share/nginx/html/
 COPY --from=verify /verify/vendor /usr/share/nginx/html/vendor
+COPY app.webmanifest instalar.html packaging.js device-backup.js pwa.js pwa.css /usr/share/nginx/html/
+COPY icons/ /usr/share/nginx/html/icons/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN set -eu; nginx; \
-    for asset in reports-data.js reports-pdf.js vendor/jspdf.umd.min.js vendor/jspdf.plugin.autotable.min.js materials.html materials-core.js materials-ui.js materials.css corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
+    for asset in app.webmanifest instalar.html packaging.js device-backup.js pwa.js pwa.css icons/eb-180.png icons/eb-192.png icons/eb-512.png icons/eb-maskable-512.png reports-data.js reports-pdf.js vendor/jspdf.umd.min.js vendor/jspdf.plugin.autotable.min.js materials.html materials-core.js materials-ui.js materials.css corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
       wget -q -O /tmp/eb-resource "http://127.0.0.1/$asset"; \
       test -s /tmp/eb-resource; \
       echo "HTTP 200 VERIFIED: $asset"; \
