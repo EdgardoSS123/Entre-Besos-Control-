@@ -1,0 +1,74 @@
+name: Verify iPhone app and inventory packaging
+on:
+  push:
+    branches: [main, work/iphone-install-share]
+    paths: ['pwa*', 'packaging.js', 'device-backup.js', 'app.webmanifest', 'instalar.html', 'icons/**', '.github/scripts/install-iphone.py', '.github/workflows/iphone-app.yml', 'tests/*iphone*', 'tests/device-packaging.cjs']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare image, browser and PDF verification
+        run: |
+          python3 -m pip install pillow==11.3.0 playwright==1.56.0 pymupdf==1.26.5
+          python3 -m playwright install --with-deps webkit
+      - name: Integrate on development branch only
+        if: github.ref == 'refs/heads/work/iphone-install-share'
+        run: python3 .github/scripts/install-iphone.py
+      - name: Verify pure calculations, recovery and existing ledgers
+        env:
+          EB_APP_FIXTURE: /tmp/eb-app-fixture.json
+        run: |
+          for file in *.js; do node --check "$file"; done
+          for test in tests/*.cjs; do node "$test"; done
+      - name: Build local PDF runtime and start isolated app
+        if: github.ref == 'refs/heads/work/iphone-install-share'
+        run: |
+          sh .github/scripts/build-pdf.sh
+          cp index.html legacy.html
+          python3 tests/serve.py >/tmp/eb-app-server.log 2>&1 &
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact deployed files
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import time,urllib.request
+          base='https://entre-besos-web-production.up.railway.app/'
+          paths=['control.html','materials.html','app.webmanifest','instalar.html','pwa.js','pwa.css','packaging.js','device-backup.js','reports-data.js','simple-lot.js','lot-operations.js','icons/eb-180.png','icons/eb-512.png']
+          for attempt in range(40):
+              try:
+                  for path in paths:
+                      name='index.html' if path=='control.html' else path
+                      req=urllib.request.Request(base+name+'?check=iphone-'+str(time.time_ns()),headers={'Cache-Control':'no-cache'})
+                      assert urllib.request.urlopen(req,timeout=15).read()==Path(path).read_bytes(),name
+                  print('PASS exact deployment: icon, installation, share and inventory packaging');break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(5)
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test desktop and iPhone-sized Chromium and WebKit
+        run: python3 tests/browser-iphone.py
+      - name: Commit only verified integration files
+        if: github.ref == 'refs/heads/work/iphone-install-share'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add icons app.webmanifest instalar.html control.html materials.html simple-lot.js lot-operations.js reports-data.js nginx.conf Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar app instalable con logo y compartir; saldos en pallets, cajas y botellas sueltas'
+            git push origin HEAD:work/iphone-install-share
+          fi
+      - name: Include generated icons for visual review
+        if: always()
+        run: mkdir -p /tmp/eb-app-checks/icons; cp icons/*.png /tmp/eb-app-checks/icons/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iphone-packaging-review
+          path: /tmp/eb-app-checks
+          retention-days: 3
