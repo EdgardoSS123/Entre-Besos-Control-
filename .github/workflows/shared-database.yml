@@ -1,0 +1,18 @@
+name: Verify shared database
+on:
+  push:
+    branches: [work/shared-database]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/eb-shared-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eb-shared-source
+          path: /tmp/eb-shared-source.zip
+          retention-days: 1
