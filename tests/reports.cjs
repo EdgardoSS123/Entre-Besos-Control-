@@ -18,6 +18,6 @@ assert.equal(R.build(d,{type:'marketing'},I).metrics[3].value,'1');
 assert.equal(R.build(d,{type:'supplies',search:'720'},I).sections[0].body.length,1);
 assert.equal(R.build(d,{type:'supplies',search:'no-match'},I).sections[0].body.length,0);
 assert.equal(JSON.stringify(d),raw);assert.throws(()=>R.build(d,{type:'lot',lotId:'missing'},I));
-assert.equal(R.cases(83),'13 corrugados + 5 bot. sueltas');assert.equal(R.cases(-7),'-1 corrugados + 1 bot. sueltas');
+assert.equal(R.cases(83),'0 pallets + 13 cajas + 5 sueltas');assert.equal(R.cases(-7),'−(0 pallets + 1 caja + 1 sueltas)');
 if(process.env.EB_REPORT_FIXTURE)require('fs').writeFileSync(process.env.EB_REPORT_FIXTURE,JSON.stringify(d));
 console.log('PASS REPORTS: exact balances, sales, delivered vs reserved samples, warehouse filters, missing costs and zero source mutations.');
