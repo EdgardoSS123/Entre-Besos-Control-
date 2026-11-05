@@ -28,7 +28,11 @@ COPY packaging.js device-backup.js pwa.js ./
 COPY tests/device-packaging.cjs ./tests/
 RUN node --check packaging.js && node --check pwa.js && node --check device-backup.js && node tests/device-packaging.cjs
 
-FROM nginx:alpine
+COPY server.cjs shared.js ./
+COPY tests/shared-server.cjs ./tests/
+RUN node --check server.cjs && node --check shared.js && node --experimental-sqlite tests/shared-server.cjs
+
+FROM nginx:alpine AS static
 # Preserve previous modules and data keys. Publish the tested lot workspace.
 COPY index.html /usr/share/nginx/html/legacy.html
 COPY control.html /usr/share/nginx/html/index.html
@@ -54,3 +58,12 @@ RUN set -eu; nginx; \
     nginx -s stop; rm -f /tmp/eb-resource
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
+
+FROM node:22-alpine AS shared
+WORKDIR /app
+COPY --from=static /usr/share/nginx/html/ ./public/
+COPY server.cjs ./server.cjs
+COPY shared.js shared.css ./public/
+ENV PORT=80
+EXPOSE 80
+CMD ["node", "--experimental-sqlite", "server.cjs"]

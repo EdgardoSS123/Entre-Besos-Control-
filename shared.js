@@ -8,6 +8,7 @@ const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,
 const signature=s=>{let n=2166136261;for(let i=0;i<s.length;i++){n^=s.charCodeAt(i);n=Math.imul(n,16777619);}return (n>>>0).toString(16)+':'+s.length;};
 const parse=(raw,fallback=null)=>{try{return JSON.parse(raw||'null')??fallback;}catch{return fallback;}};
 let who=null,csrf='',revision=0,ready=false,loaded=false,sending=false,touched=false,conflict=false,checking=false,remoteWaiting=false;
+let seenSignature=null;
 let shell,timer,reportPass=false,lastStatus='Conectando…';
 const meaningful=d=>d&&Object.values(d).some(v=>Array.isArray(v)&&v.length);
 function checkData(raw){const d=JSON.parse(raw);if(!d||!Array.isArray(d.lots)||!Array.isArray(d.moves))throw Error('No se pudo leer la copia local. No se borró.');return d;}
@@ -95,7 +96,7 @@ function refreshUI(raw){
 }
 async function poll(force=false){
  if(!ready||checking||sending||get(OUT)||document.hidden&&!force)return;checking=true;
- try{const row=await api('state?since='+revision);if(row.unchanged){if(!remoteWaiting)status('Actualizado · versión '+revision);return;}
+ try{const row=await api('state?since='+revision);if(get(OUT)||sending)return;if(row.unchanged){if(!remoteWaiting)status('Actualizado · versión '+revision);return;}
   if(editing()&&!force){remoteWaiting=true;status('Hay cambios en otro dispositivo. Guarda o cancela tu captura y pulsa Actualizar.',true);return;}
   revision=row.revision;const y=scrollY;refreshUI(JSON.stringify(row.data));window.scrollTo(0,y);status('Actualizado · versión '+revision);
  }catch(e){if(e.status===401){ready=false;login();}else status('Sin conexión · no se confirma información actualizada',true);}finally{checking=false;}
@@ -114,14 +115,16 @@ async function sendPending(){
  }catch(e){if(e.status===409){conflict=true;status('Conflicto: se conservó tu captura local. Pulsa Actualizar para revisarlo.',true);const row=await api('state');keepCloud(row,e.message);}else if(e.status===401){ready=false;login();}else status('Pendiente de enviar · '+e.message,true);}finally{sending=false;}
 }
 async function flush(){if(navigator.locks)return navigator.locks.request('entre-besos-sync',{ifAvailable:true},lock=>lock?sendPending():undefined);return sendPending();}
+Storage.prototype.getItem=function(k){const raw=nativeGet.call(this,k);if(this===localStorage&&String(k)===KEY&&raw)seenSignature=signature(raw);return raw;};
 Storage.prototype.setItem=function(k,v){
  if(this!==localStorage||String(k)!==KEY)return nativeSet.call(this,k,v);
  const raw=String(v);if(raw===get(KEY))return;
  if(!ready||!who)throw Error('Primero inicia sesión y conecta los datos.');if(who.role!=='editor')throw Error('EB2 es solo consulta; no se modificó la información.');if(conflict)throw Error('Resuelve la copia pendiente antes de guardar nuevos cambios.');checkData(raw);
+ if(seenSignature&&get(KEY)&&seenSignature!==signature(get(KEY)))throw Error('Otra pestaña cambió los datos. Conserva tu captura y actualiza antes de guardar.');
  const previous=get(OUT),existing=parse(previous),meta=parse(get(META));
  const pending={revision:existing?.revision??meta?.revision??revision,operation:crypto.randomUUID(),raw};
  set(OUT,JSON.stringify(pending));try{nativeSet.call(this,k,raw);}catch(e){if(previous)set(OUT,previous);else remove(OUT);throw e;}
- touched=false;status('Guardado local · enviando a la base compartida…');setTimeout(flush,0);
+ seenSignature=signature(raw);touched=false;status('Guardado local · enviando a la base compartida…');setTimeout(flush,0);
 };
 Storage.prototype.removeItem=function(k){if(this===localStorage&&String(k)===KEY)throw Error('No se permite borrar la base compartida desde el almacenamiento del navegador.');return nativeRemove.call(this,k);};
 document.addEventListener('input',e=>{if(!loaded||e.target.closest('#eb-cloud-shell,#eb-cloud-bar,.eb-install-sheet'))return;const id=e.target.id||'';if(!/search|filter|history-warehouse/.test(id))touched=true;},true);
@@ -130,7 +133,7 @@ document.addEventListener('click',async e=>{
  if(who?.role==='reader'&&/^(Guardar|Eliminar|Editar|Nuevo|Nueva|Registrar|Capturar|Mover|Descontar|Restaurar|Importar|Duplicar|\+ Otro)/i.test(b.textContent.trim())){e.preventDefault();e.stopImmediatePropagation();status('EB2 · Solo consulta. Los cambios requieren un socio EB1.',true);return;}
  if(b.matches('#eb-report-pdf,#simple-print,#print-stock,[data-print]')&&!reportPass){
   e.preventDefault();e.stopImmediatePropagation();await flush();if(get(OUT)||conflict){status('El PDF espera a que tus cambios estén guardados en la base compartida.',true);return;}
-  try{await api('session');await poll(true);if(!ready||document.documentElement.dataset.sharedStatus==='pending')throw Error('Conecta para generar el reporte actualizado.');reportPass=true;const current=b.isConnected?b:document.getElementById(b.id);current?.click();}catch(err){status(err.message,true);}finally{reportPass=false;}
+  try{await api('session');await poll();if(!ready||document.documentElement.dataset.sharedStatus==='pending')throw Error('Conecta para generar el reporte actualizado.');reportPass=true;const current=b.isConnected?b:document.getElementById(b.id);current?.click();}catch(err){status(err.message,true);}finally{reportPass=false;}
  }
 },true);
 window.addEventListener('storage',e=>{if(e.key===META){const m=parse(get(META));if(m)revision=m.revision;}if(e.key===OUT&&!sending)setTimeout(flush,0);});
