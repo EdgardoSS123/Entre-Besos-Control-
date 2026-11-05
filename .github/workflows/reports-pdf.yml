@@ -1,0 +1,77 @@
+name: Verify branded PDF reports and Otros
+on:
+  push:
+    branches: [main, work/materials-inventories]
+    paths: ['reports-*.js', 'pdf-deps/**', '.github/scripts/*pdf*', '.github/workflows/reports-pdf.yml', 'tests/*reports*', 'materials-ui.js', 'materials.html', 'control.html', 'Dockerfile']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply narrowly scoped integration on development branch
+        if: github.ref == 'refs/heads/work/materials-inventories'
+        run: python3 .github/scripts/install-pdf.py
+      - name: Bundle local PDF runtime
+        run: sh .github/scripts/build-pdf.sh
+      - name: Verify syntax, report arithmetic and existing ledger regressions
+        env:
+          EB_REPORT_FIXTURE: /tmp/eb-report-fixture.json
+        run: |
+          for file in *.js; do node --check "$file"; done
+          for test in tests/*.cjs; do node "$test"; done
+      - name: Prepare isolated browser and PDF validator
+        run: |
+          python3 -m pip install playwright==1.56.0 pymupdf==1.26.5
+          if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
+      - name: Start isolated development server
+        if: github.ref == 'refs/heads/work/materials-inventories'
+        run: |
+          cp index.html legacy.html
+          python3 tests/serve.py >/tmp/eb-pdf-server.log 2>&1 &
+          echo 'EB_TEST_URL=http://127.0.0.1:8765/' >> "$GITHUB_ENV"
+      - name: Verify exact published files
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          paths=['control.html','materials.html','materials-ui.js','reports-data.js','reports-pdf.js','vendor/jspdf.umd.min.js','vendor/jspdf.plugin.autotable.min.js']
+          for attempt in range(32):
+              try:
+                  for name in paths:
+                      public='index.html' if name=='control.html' else name
+                      request=urllib.request.Request(base+public+'?verify=reports-'+str(time.time_ns()),headers={'Cache-Control':'no-cache'})
+                      assert urllib.request.urlopen(request,timeout=20).read()==Path(name).read_bytes(),name
+                  print('Verified exact published PDF and Otros assets');break
+              except Exception as e:
+                  print('Publication check:',str(e),flush=True)
+                  if attempt==31:raise
+                  time.sleep(5)
+          PY
+          echo 'EB_TEST_URL=https://entre-besos-web-production.up.railway.app/' >> "$GITHUB_ENV"
+      - name: Test existing inventory entry and edit flows
+        env:
+          EB_SCREENSHOTS: /tmp/eb-report-checks
+        run: python3 tests/browser-materials.py
+      - name: Test Otros and PDF downloads on desktop and mobile
+        run: python3 tests/browser-reports.py
+      - name: Commit only verified integration files on development branch
+        if: github.ref == 'refs/heads/work/materials-inventories'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add materials-ui.js materials.html control.html Dockerfile reports-pdf.js pdf-deps/package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar Otros y reportes PDF con logo, filtros y paginación verificados'
+            git push origin HEAD:work/materials-inventories
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: branded-pdf-review
+          path: /tmp/eb-report-checks
+          retention-days: 3
