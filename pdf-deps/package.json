@@ -1,0 +1,9 @@
+{
+  "name": "entre-besos-pdf-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.9"
+  }
+}
