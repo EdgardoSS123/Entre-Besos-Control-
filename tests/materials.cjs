@@ -1,0 +1,25 @@
+'use strict';
+const assert=require('node:assert/strict'), C=require('../materials-core.js');
+const original={lots:[{id:'REAL',unitCost:237.66,materialsPlan:[{name:'Envase especial'}]}],moves:[{n:5}],sales:[{amount:1100}],expenses:[{amount:20}],contacts:[{name:'Real'}],costs:{x:3},materials:[{name:'Histórico',qty:12,loc:'Oaxaca',custom:'preserved'}],extra:{a:1}};
+const frozen=JSON.stringify(original),opts={id:'test-1',stamp:'2026-11-05T18:00:00.000Z'};
+assert.equal(C.cost(original.materials[0]),null);assert.equal(JSON.stringify(original),frozen);
+assert(C.catalog(original).includes('Botellas vacías'));assert(C.catalog(original).includes('Envase especial'));assert(!C.catalog(original).includes('Seguro'));
+assert.equal(JSON.stringify(original),frozen);assert.deepEqual(C.records(original,'supplies'),[]);
+const input={name:'Playeras',loc:'CDMX',qty:'20',totalCost:'3500',presentation:'M'};
+let d=C.change(original,'marketing',input,opts);assert.equal(d.materials.length,2);assert.equal(d.materials[1].totalCost/d.materials[1].qty,175);
+for(const k of ['lots','moves','sales','expenses','contacts','costs','extra'])assert.deepEqual(d[k],original[k]);assert.deepEqual(d.materials[0],original.materials[0]);assert.equal(JSON.stringify(original),frozen);
+assert.throws(()=>C.change(d,'marketing',input,opts),/ya está registrado/);
+let r=d.materials[1],before=JSON.stringify(r);d=C.change(d,'marketing',{...input,qty:'30',totalCost:'4500'},{...opts,index:1,expected:before,id:'test-edit'});assert.equal(d.materials[1].qty,30);assert.equal(d.materials[1].totalCost/30,150);
+assert.throws(()=>C.change(d,'marketing',input,{...opts,index:1,expected:before}),/cambió/);
+const noInput=['',null,undefined,'   ',false,[],{}];for(const v of noInput){assert.throws(()=>C.change(original,'marketing',{...input,qty:v},opts));assert.throws(()=>C.change(original,'marketing',{...input,totalCost:v},opts));}
+for(const v of [-1,NaN,Infinity,1.5])assert.throws(()=>C.change(original,'marketing',{...input,qty:v},opts));
+for(const v of [-1,NaN,Infinity,1.234])assert.throws(()=>C.change(original,'marketing',{...input,totalCost:v},opts));
+assert.throws(()=>C.change(original,'marketing',{...input,name:' '},opts));assert.throws(()=>C.change(original,'marketing',{...input,loc:''},opts));assert.throws(()=>C.change(original,'marketing',{...input,qty:0,totalCost:9},opts));
+assert.equal(C.change(original,'marketing',{...input,totalCost:0},opts).materials[1].totalCost,0);
+assert.equal(C.change(original,'marketing',{...input,qty:0,totalCost:0},opts).materials[1].qty,0);
+const s=C.change(d,'supplies',{...input,name:'Botellas vacías',qty:100,totalCost:2500,presentation:'720 ml'},opts);assert.equal(s.supplies[0].totalCost/100,25);assert.deepEqual(s.materials,d.materials);
+assert.throws(()=>C.change(original,'supplies',{...input,name:'Inventado'},opts));
+const custom=C.change(original,'supplies',{...input,name:'Mi insumo',custom:true},opts);assert(C.catalog(custom).includes('Mi insumo'));
+const del=C.change(s,'marketing',null,{...opts,index:1,expected:JSON.stringify(s.materials[1]),remove:true});assert.equal(del.materials.length,1);assert.equal(del.materialInventoryHistory.at(-1).before.name,'Playeras');assert.deepEqual(del.lots,original.lots);assert.deepEqual(del.supplies,s.supplies);
+assert.throws(()=>C.records({...original,materials:{}},'marketing'));assert.throws(()=>C.change({...original,materialInventoryHistory:{}},'marketing',input,opts));
+console.log('PASS MATERIALS: blank validation, totals, per-unit cost, catalog/custom items, separate warehouses and categories, editing/deleting, audit, stale protection and preservation of all unrelated records.');
