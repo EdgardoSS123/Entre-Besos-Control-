@@ -66,6 +66,19 @@ p=Path('index.html');s=p.read_text()
 if "if(s==='Reporte socios'||s==='CRM')" not in s:
     s=s.replace('function go(s){',"function go(s){if(s==='Reporte socios'||s==='CRM'){location.href='/office.html?section='+(s==='CRM'?'contacts':'summary');return;}",1)
     s=re.sub(r'shared.js\?v=[^"\s]+','shared.js?v=office1',s);p.write_text(s)
+# The legacy page had no explicit head/body. A prior integration inserted its
+# shared loader into a report HTML string, prematurely ending the inert script.
+p=Path('index.html');s=p.read_text()
+if 'id="legacy-shared-loader"' not in s:
+    s=re.sub(r'<script src="/shared\.js[^"<>]*" defer></script>','',s)
+    s=re.sub(r'<link rel="stylesheet" href="/shared\.css[^"<>]*">','',s)
+    s=s.replace('<html lang="es" class="eb-cloud-loading">','<html lang="es" class="eb-cloud-loading"><head>',1)
+    assert s.count('<header>')==1
+    s=s.replace('<header>','<link rel="stylesheet" href="/shared.css?v=office1"></head><body><header>',1)
+    ending='</script></html>'
+    assert s.endswith(ending) or s.endswith(ending+'\n')
+    s=s.rsplit(ending,1)[0]+'</script><script id="legacy-shared-loader" src="/shared.js?v=office1" defer></script></body></html>\n'
+    p.write_text(s)
 p=Path('Dockerfile');s=p.read_text()
 if 'COPY contacts-core.js executive-core.js' not in s:
     s=s.replace('FROM nginx:alpine AS static','COPY contacts-core.js executive-core.js office-ui.js office-nav.js ./\nCOPY tests/office.cjs ./tests/\nRUN node --check office-ui.js && node --check office-nav.js && node tests/office.cjs\n\nFROM nginx:alpine AS static',1)
