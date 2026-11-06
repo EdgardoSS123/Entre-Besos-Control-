@@ -23,17 +23,16 @@ function build(d,I,opts={}){
   for(const r of b.rows){const z=locations.get(r.location)||{quantity:0,commercial:0,samples:0,cost:0,missing:0};z.quantity+=r.quantity;z.commercial+=r.commercialQuantity||0;z.samples+=r.sampleQuantity||0;if(valid(l.unitCost))z.cost+=r.quantity*Number(l.unitCost);else z.missing++;locations.set(r.location,z);}
   if(b.unexplained)diff.push([l.id,num(Math.abs(b.unexplained))+' botellas',b.unexplained<0?'Registradas de más':'Por ubicar o explicar']);
  });
- const finance=new Map(),salesDetail=[],unpriced=[];
+ const finance=new Map();
  for(const {l} of balances)for(const s of I.sales(d,l.id)){
   const c=s.currency||'MXN',f=finance.get(c)||{sales:0,paid:0,pending:0,unknownPayment:0,unknownPrice:0,count:0};f.count++;
   const priced=s.priceKnown!==false&&valid(s.totalCents),st=I.saleStatus(s,new Date().toISOString().slice(0,10));
-  if(priced){f.sales+=Number(s.totalCents);if(valid(st.paidCents)&&valid(st.pendingCents)){f.paid+=Number(st.paidCents);f.pending+=Number(st.pendingCents);}else f.unknownPayment+=Number(s.totalCents);}else{f.unknownPrice++;unpriced.push([l.id,s.customer||'Sin cliente',num(s.quantity)+' botellas']);}
+  if(priced){f.sales+=Number(s.totalCents);if(valid(st.paidCents)&&valid(st.pendingCents)){f.paid+=Number(st.paidCents);f.pending+=Number(st.pendingCents);}else f.unknownPayment+=Number(s.totalCents);}else f.unknownPrice++;
   finance.set(c,f);
-  salesDetail.push([l.id,s.customer||'Sin cliente',s.from||'Sin bodega',num(s.quantity),priced?money(Number(s.totalCents)/100,c):'Precio pendiente']);
  }
  const stockNote=totals.missingCount?totals.missingCount+' lote(s) sin conteo':'En todas las ubicaciones';
  model.metrics=[{label:'SALDO EN BODEGAS',value:num(totals.stock),note:stockNote},{label:'VENDIDAS',value:num(totals.sold),note:'Botellas registradas'},{label:'MUESTRAS ENTREGADAS',value:num(totals.samples),note:'Botellas · ingreso $0'},{label:'LOTES REGISTRADOS',value:num(balances.length),note:num(totals.produced)+' botellas producidas'}];
- // Partner-facing presentation exposes sales only. Internal collection records and totals remain unchanged.
+ // Partner-facing sales are aggregated only: no buyer list or collection details.
  model.sections.push(section('Ventas',['Moneda','Ventas'],[...finance].map(([c,f])=>[c,money(f.sales/100,c)]),[1]));
  model.sections.push(section('Lo que tenemos y lo que ha costado',['Concepto','Importe registrado','Lectura'],[
  ['Producción de los lotes',money(totals.productionCost),totals.missingProductionCost?totals.missingProductionCost+' lote(s) sin costo total':'Costo de producción; no equivale a dinero disponible'],
@@ -52,10 +51,10 @@ function build(d,I,opts={}){
   model.sections.push(section(label+' · existencias y costo',['Concepto / presentación','Ubicación','Cantidad','Costo total','Costo por unidad'],rows.map(r=>[String(r.name||'Sin concepto')+(r.presentation?'\n'+r.presentation:''),r.loc||'Sin ubicación',valid(r.qty)?num(Number(r.qty))+' '+(r.unit||'unidades'):'Sin capturar',money(r.totalCost,r.currency||'MXN'),valid(r.totalCost)&&Number(r.qty)>0?money(Number(r.totalCost)/Number(r.qty),r.currency||'MXN'):'No calculable']),[2,3,4]));
   model.sections.push(section('Total registrado · '+label.toLowerCase(),['Moneda','Costo total','Costos pendientes'],[...costs].map(([c,n])=>[c,money(n,c),num(missing)+' registros sin costo']),[1,2],{empty:rows.length?'No hay costos capturados. Los materiales no se consideran gratuitos.':'Sin inventario registrado; no se asume existencia cero.'}));
  }
- model.sections.push(section('Ventas por cliente',['Lote','Cliente','Origen','Botellas','Venta'],salesDetail,[3,4]));
- if(unpriced.length)model.sections.push(section('Ventas que aún no tienen precio',['Lote','Cliente','Cantidad'],unpriced,[2]));
- const legacy=arr(d,'sales').filter(s=>s.status!=='cancelled');
- if(legacy.length)model.sections.push(section('Ventas antiguas sin vínculo a lote',['Cliente','Fecha','Importe'],legacy.map(s=>[s.client||s.customer||'Sin cliente',s.date||'Sin fecha',money(s.amount,s.currency||'MXN')]),[2],{note:'Se muestran aparte y NO se suman a ventas por lote: primero hay que confirmar si son operaciones distintas o duplicadas.'}));
+ // Legacy sales remain separate to avoid double counting, but never itemized by buyer.
+ const legacy=arr(d,'sales').filter(s=>s.status!=='cancelled'),legacyTotals=new Map();
+ for(const s of legacy){const c=s.currency||'MXN',f=legacyTotals.get(c)||{count:0,amount:0,missing:0};f.count++;if(valid(s.amount))f.amount+=Number(s.amount);else f.missing++;legacyTotals.set(c,f);}
+ if(legacy.length)model.sections.push(section('Ventas antiguas sin vínculo a lote',['Moneda','Registros','Importe conocido','Sin precio'],[...legacyTotals].map(([c,f])=>[c,num(f.count),f.count>f.missing?money(f.amount,c):'Sin capturar',num(f.missing)]),[1,2,3],{note:'Totales separados, no sumados a ventas por lote hasta confirmar si son operaciones distintas o duplicadas.'}));
  const expenses=arr(d,'expenses').filter(x=>x.status!=='cancelled'),expenseTotals=new Map();
  expenses.forEach(e=>{if(valid(e.amount)){const c=e.currency||'MXN';expenseTotals.set(c,(expenseTotals.get(c)||0)+Number(e.amount));}});
  model.sections.push(section('Gastos registrados',['Concepto','Fecha / mes','Importe','Notas'],expenses.map(e=>[e.type||e.name||e.concept||'Sin concepto',e.date||e.month||'Sin fecha',money(e.amount,e.currency||'MXN'),e.notes||'']),[2]));

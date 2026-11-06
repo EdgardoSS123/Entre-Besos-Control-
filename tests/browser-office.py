@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright,expect
 BASE='http://127.0.0.1:8773/'
 OUT=Path(os.environ.get('EB_SCREENSHOTS','/tmp/eb-office-review'));OUT.mkdir(exist_ok=True,parents=True)
 root=Path.cwd();seed=json.loads(Path('/tmp/eb-office-fixture.json').read_text());public=Path(tempfile.mkdtemp(prefix='eb-office-public-'))
+seed['sales']=[{'client':'PRIVATE-LEGACY-BUYER','amount':321,'currency':'MXN'}]
 for f in root.iterdir():
  if f.suffix in ['.js','.css','.html','.jpg','.png','.webmanifest']:shutil.copy(f,public/f.name)
 shutil.copy(root/'index.html',public/'legacy.html');shutil.copy(root/'control.html',public/'index.html')
@@ -26,6 +27,7 @@ try:
   a.locator('.sidebar [data-office="summary"]').click();synced(a)
   expect(a.locator('#office-app h1')).to_have_text('Dónde estamos parados')
   expect(a.locator('#office-app')).to_contain_text('1,483')
+  for t in ['Ventas por cliente','Prueba México','Prueba USA','PRIVATE-LEGACY-BUYER']:expect(a.locator('#office-app')).not_to_contain_text(t)
   with a.expect_download() as event:a.locator('#office-pdf').click()
   event.value.save_as(str(OUT/'resumen-prueba-PC.pdf'));expect(a.locator('#eb-pdf-ready')).to_be_visible();expect(a.locator('#eb-pdf-ready a[download]')).to_have_attribute('download',re.compile(r'.*resumen-general.*\.pdf'))
   a.locator('#eb-pdf-ready button',has_text='Volver').click();a.screenshot(path=str(OUT/'resumen-pc.png'),full_page=True)
@@ -44,26 +46,26 @@ try:
   with z.expect_download() as event:z.locator('#office-pdf').click()
   event.value.save_as(str(OUT/'resumen-prueba-iPhone.pdf'));expect(z.locator('#eb-pdf-ready a',has_text='Abrir PDF')).to_be_visible();z.locator('#eb-pdf-ready button',has_text='Volver').click();z.screenshot(path=str(OUT/'resumen-iphone.png'),full_page=True)
   saved=z.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')
-  for k in ['lots','moves','lotSales','lotSampleActions','materials','supplies','expenses']:assert saved.get(k)==seed.get(k),k
+  for k in ['lots','moves','lotSales','lotSampleActions','materials','supplies','expenses','sales']:assert saved.get(k)==seed.get(k),k
   import pymupdf
   for name in ['PC','iPhone']:
    doc=pymupdf.open(OUT/('resumen-prueba-'+name+'.pdf'));text=' '.join((' '.join(page.get_text() for page in doc)).split())
    for t in ['Dónde estamos parados','1,483','Ventas','10,000.00','250.00','Gorras','Tapones','USD','México']:assert t in text,(name,t)
-   for t in ['Dinero: ventas y cobranza','Cobrado registrado','Por cobrar conocido','Pago por aclarar','Ventas y saldos por cliente','Por cobrar','Pagada','Pendiente','Por aclarar']:assert t not in text,(name,'Unexpected collection information',t)
+   for t in ['Dinero: ventas y cobranza','Cobrado registrado','Por cobrar conocido','Pago por aclarar','Ventas y saldos por cliente','Por cobrar','Pagada','Pendiente','Por aclarar','Ventas por cliente','Prueba México','Prueba USA','PRIVATE-LEGACY-BUYER','Jane Contacto','Tienda vieja','jane@example.test']:assert t not in text,(name,'Unexpected buyer or collection information',t)
    assert len(doc)>=2
    for i,page in enumerate(doc):
     for block in page.get_text('dict')['blocks']:
      if 'lines' not in block:continue
      for line in block['lines']:
       x0,y0,x1,y1=line['bbox'];assert x0>=0 and y0>=0 and x1<=612.5 and y1<=792.5,(i,line['bbox'])
-    if i<3:page.get_pixmap(matrix=pymupdf.Matrix(1.3,1.3)).save(OUT/('pdf-'+name+'-'+str(i+1)+'.png'))
+    page.get_pixmap(matrix=pymupdf.Matrix(1.3,1.3)).save(OUT/('pdf-'+name+'-'+str(i+1)+'.png'))
   reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'office.html?section=contacts');login(r,'test-reader');synced(r);expect(r.locator('#contact-new')).to_have_count(0);expect(r.locator('[data-contact-edit]')).to_have_count(0);r.locator('[data-country="Todos"]').click();expect(r.locator('.office-contact')).to_have_count(3)
   a.goto(BASE+'legacy.html');synced(a);a.evaluate("go('Reporte socios')");a.wait_for_url('**/office.html?section=summary');synced(a)
   a.goto(BASE+'materials.html?kind=supplies');synced(a)
   with a.expect_download() as event:a.locator('#eb-report-pdf').click()
   event.value.save_as(str(OUT/'resumen-desde-insumos.pdf'))
   assert not errors,errors
-  print('PASS OFFICE: partner PDF shows sales only, with no collection columns or payment statuses; original payments, inventories and costs preserved; PC/WebKit downloads, contacts, bidirectional sync, EB2 read-only, navigation and page bounds.')
+  print('PASS OFFICE: partner PDF has aggregate sales only, with no buyer list or collection statuses; original buyers/payments/inventories preserved; PC/WebKit downloads, contacts, bidirectional sync, EB2 read-only, navigation and page bounds.')
   pc.close();phone.close();reader.close();wb.close();browser.close()
 finally:
  server.terminate();server.wait(timeout=10)
