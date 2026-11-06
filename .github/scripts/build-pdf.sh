@@ -15,3 +15,8 @@ for lib in jspdf jspdf-autotable; do
 done
 node --check vendor/jspdf.umd.min.js
 node --check vendor/jspdf.plugin.autotable.min.js
+
+# Reuse the exact compression dependency already pinned by the PDF lockfile.
+cp pdf-deps/node_modules/fflate/umd/index.js vendor/fflate.js
+cp pdf-deps/node_modules/fflate/LICENSE vendor/fflate-LICENSE.txt
+node --check vendor/fflate.js

@@ -2,7 +2,8 @@
 'use strict';
 const $=id=>document.getElementById(id),C=window.EBContacts,E=window.EBExecutive,esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const section=new URLSearchParams(location.search).get('section')==='contacts'?'contacts':'summary';
-let editing=null,dirty=false,selected='México',query='';
+const contactCountryParam=new URLSearchParams(location.search).get('country');
+let editing=null,dirty=false,selected=C.COUNTRIES.includes(contactCountryParam)?contactCountryParam:'México',query='';
 const reader=()=>window.EBShared?.user?.role==='reader';
 function read(){const raw=localStorage.getItem('eb-v1');const d=JSON.parse(raw||'null');if(!d||!Array.isArray(d.lots)||!Array.isArray(d.moves))throw Error('No se pudieron leer los registros compartidos.');return d;}
 function message(m,error=false){const t=$('office-message');if(t){t.textContent=m;t.dataset.error=String(error);}}
