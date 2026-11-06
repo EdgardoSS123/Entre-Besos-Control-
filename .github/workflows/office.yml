@@ -1,0 +1,78 @@
+name: Verify executive PDF and contacts
+on:
+  push:
+    branches: [main, work/summary-contacts]
+    paths: ['office*', 'contacts-core.js', 'executive-core.js', 'reports-pdf.js', 'shared.js', 'tests/*office*', '.github/scripts/install-office.py', '.github/workflows/office.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate reviewed modules on development branch only
+        if: github.ref == 'refs/heads/work/summary-contacts'
+        run: python3 .github/scripts/install-office.py
+      - name: Validate all ledger and directory calculations
+        run: |
+          for f in *.js; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+          EB_OFFICE_FIXTURE=/tmp/eb-office-fixture.json node tests/office.cjs
+      - name: Prepare isolated browsers and PDF runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0 pymupdf==1.26.5
+          python3 -m playwright install --with-deps webkit
+      - name: Verify PC and WebKit downloads, contacts and shared data
+        run: python3 tests/browser-office.py
+      - name: Verify production image build
+        if: github.ref == 'refs/heads/work/summary-contacts'
+        run: docker build -t eb-office-test .
+      - name: Commit verified integration without modifying records
+        if: github.ref == 'refs/heads/work/summary-contacts'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports-pdf.js shared.js control.html materials.html index.html Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar resumen general PDF y directorio compartido por país'
+            git push origin HEAD:work/summary-contacts
+          fi
+      - name: Verify exact published files and protected data boundary
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error,json
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          names=['office.html','office.css','office-ui.js','office-nav.js','contacts-core.js','executive-core.js','reports-pdf.js','shared.js']
+          for attempt in range(45):
+              try:
+                  for name in names:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(5)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('Protected data unexpectedly public')
+          except urllib.error.HTTPError as e:
+              assert e.code==401
+          print('PASS deployed exact code and authenticated data boundary. No real data read or changed.')
+          PY
+      - name: Package visual review and isolated runtime
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-office-review
+          if [ -d vendor ]; then tar -czf /tmp/eb-office-review/pdf-runtime.tgz vendor; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: executive-contacts-review
+          path: /tmp/eb-office-review
+          retention-days: 2
