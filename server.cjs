@@ -24,13 +24,14 @@ function createApp(options={}){
  CREATE TABLE IF NOT EXISTS attempts(bucket TEXT PRIMARY KEY,n INTEGER NOT NULL,expires INTEGER NOT NULL);`);
  const getState=()=>db.prepare('SELECT revision,payload,updated,actor FROM workspace WHERE id=1').get();
  const json=(res,status,value,headers={})=>{const raw=JSON.stringify(value);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin',...headers});res.end(raw);};
- const body=async(req)=>{if(!String(req.headers['content-type']||'').startsWith('application/json'))throw error(415,'Se requiere JSON.');let size=0,chunks=[];for await(const chunk of req){size+=chunk.length;if(size>MAX)throw error(413,'El respaldo supera 12 MB; no se guardó.');chunks.push(chunk);}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw error(400,'JSON no válido.');}};
+ const body=async(req,limit=MAX)=>{if(!String(req.headers['content-type']||'').startsWith('application/json'))throw error(415,'Se requiere JSON.');let size=0,chunks=[];for await(const chunk of req){size+=chunk.length;if(size>limit)throw error(413,'El archivo supera el límite permitido; no se guardó.');chunks.push(chunk);}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw error(400,'JSON no válido.');}};
  const session=req=>{const token=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);if(!token||!/^[0-9a-f]{64}$/.test(token))return null;const s=db.prepare('SELECT * FROM sessions WHERE token=? AND expires>?').get(digest(token),now());if(!s)return null;const u=users.find(x=>x.username.toLowerCase()===s.username);return u?{...s,user:{username:u.username,name:u.name||u.username,role:u.role}}:null;};
  const origin=req=>{if(!origins.includes(String(req.headers.origin||'')))throw error(403,'Origen no permitido.');};
  const auth=req=>{const s=session(req);if(!s)throw error(401,'Inicia sesión para ver la información compartida.');return s;};
  const csrf=(req,s)=>{origin(req);if(req.headers['x-eb-csrf']!==s.csrf)throw error(403,'La sesión debe actualizarse.');};
  const attempt=(bucket,limit)=>{const r=db.prepare('SELECT * FROM attempts WHERE bucket=? AND expires>?').get(bucket,now());if(r&&r.n>=limit)throw error(429,'Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.');db.prepare('INSERT INTO attempts VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET n=CASE WHEN expires>? THEN n+1 ELSE 1 END,expires=CASE WHEN expires>? THEN expires ELSE excluded.expires END').run(bucket,now()+15*60e3,now(),now());};
  const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webmanifest':'application/manifest+json','.svg':'image/svg+xml'};
+ const documents=require('./documents-store.cjs').createDocuments({db,auth,csrf,json,body});
  const handler=async(req,res)=>{try{
   const url=new URL(req.url,'http://internal'),route=url.pathname;
   if(route==='/healthz'){db.prepare('SELECT revision FROM workspace').get();return json(res,200,{ok:true,shared:true,version:'shared-v1'});}
@@ -67,6 +68,7 @@ function createApp(options={}){
     db.exec('COMMIT');return json(res,200,{ok:true,revision:rev,updated});
    }catch(e){try{db.exec('ROLLBACK');}catch{}throw e;}
   }
+  if(await documents(req,res,url))return;
   if(route.startsWith('/api/'))throw error(404,'No encontrado.');
   if(!['GET','HEAD'].includes(req.method))throw error(405,'Método no permitido.');
   let relative;try{relative=decodeURIComponent(route);}catch{throw error(400,'Ruta no válida.');}
