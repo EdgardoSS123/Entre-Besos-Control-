@@ -1,0 +1,73 @@
+name: Verify shared documents
+on:
+  push:
+    branches: [main, work/shared-documents]
+    paths: ['documents*', 'server.cjs', 'office-nav.js', 'tests/*documents*', '.github/scripts/install-documents.py', '.github/workflows/documents.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate on isolated development branch
+        if: github.ref == 'refs/heads/work/shared-documents'
+        run: python3 .github/scripts/install-documents.py
+      - name: Verify documents and existing business calculations
+        run: |
+          node --check server.cjs
+          node --check documents-store.cjs
+          node --check documents-ui.js
+          node --check office-nav.js
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+      - name: Prepare browser runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Test document uploads, download, desktop/mobile sharing and permissions
+        run: python3 tests/browser-documents.py
+      - name: Verify production image
+        if: github.ref == 'refs/heads/work/shared-documents'
+        run: docker build -t eb-documents-tested .
+      - name: Commit verified source integration
+        if: github.ref == 'refs/heads/work/shared-documents'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add documents.html server.cjs office-nav.js control.html materials.html office.html index.html Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar Documentos compartidos con cinco categorías y archivos persistentes'
+            git push origin HEAD:work/shared-documents
+          fi
+      - name: Verify deployed source and private document boundary
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(45):
+              try:
+                  for name in ['documents.html','documents-ui.js','documents.css','office-nav.js']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          for route in ['api/documents','api/state']:
+              try:
+                  urllib.request.urlopen(base+route,timeout=15)
+                  raise AssertionError('Unexpected public data: '+route)
+              except urllib.error.HTTPError as e:assert e.code==401,e.code
+          print('PASS exact deployed document module and authenticated access. No real documents or business records read or changed.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shared-documents-review
+          path: /tmp/eb-documents-review/*.png
+          retention-days: 2
