@@ -5,7 +5,10 @@ if '/contacts-import.js' not in s:
     assert s.count(marker)==1
     extra='<script type="application/x-eb-shared" src="/vendor/fflate.js?v=contact-import1"></script><script type="application/x-eb-shared" src="/contacts-import.js?v=contact-import1"></script>'
     s=s.replace(marker,extra+marker,1)
-    p.write_text(s)
+if 'eb-import-responsive' not in s:
+    style='<style id="eb-import-responsive">#ci-preview{max-height:320px;overflow:auto}#ci-preview table{min-width:660px}#eb-contact-import .eb-import-buttons{position:sticky;bottom:-18px;background:#fff;padding:12px 0;margin:0}#office-app .heading:has(#contact-import-button){flex-wrap:wrap}@media(max-width:600px){#office-app .heading:has(#contact-import-button)>div{flex-basis:100%}#contact-new,#contact-import-button{flex:1;margin:0!important}}</style>'
+    s=s.replace('</head>',style+'</head>',1)
+p.write_text(s)
 p=Path('office-ui.js');s=p.read_text()
 if 'contactCountryParam' not in s:
     old="let editing=null,dirty=false,selected='México',query='';"
