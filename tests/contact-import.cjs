@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),P=require('../contacts-import.js');
+const rows=[['Business report'],['Contact Name','Company','City','Email','Phone'],['Jane Example','Example Store','Austin','jane@example.test','+1 512 555 0100'],['Jane Example','Example Store','Austin','jane@example.test','+1 512 555 0100'],['','Second Store','Dallas','',''],['Invalid','Bad Email','Houston','not-an-email','']];
+const h=P.detect(rows);assert.equal(h.header,1);assert.equal(h.mapping.name,0);assert.equal(h.mapping.place,1);assert.equal(h.mapping.email,3);
+const cs=P.candidates(rows,h.header,h.mapping,'USA');assert.equal(cs.length,4);assert.equal(cs[0].row,3);assert.equal(cs[0].item.place,'Example Store · Austin');assert.equal(cs[2].item.name,'Second Store');assert.equal(cs[2].item.email,'');assert(cs[3].error);
+const d={lots:[{id:'Preserve',bottles:60}],moves:[{n:3}],contacts:[],materials:[{qty:8}],supplies:[{qty:12}],extra:{preserve:true}};const before=JSON.stringify(d);let i=0;
+let result=P.apply(d,cs,{id:()=>String(++i),stamp:'2026-11-06T20:00:00Z',file:'synthetic.xlsx',sheet:'USA'});
+assert.equal(result.added.length,2);assert.equal(result.duplicates.length,1);assert.equal(result.invalid.length,1);assert.equal(result.data.contacts.length,2);assert.equal(result.data.contactHistory.length,2);assert.equal(JSON.stringify(d),before);
+for(const k of ['lots','moves','materials','supplies','extra'])assert.deepEqual(result.data[k],d[k]);
+assert.equal(result.data.contacts[0].importSource.row,3);assert.equal(P.plan(result.data,cs).added.length,0);
+assert.equal(P.csv('Name,Company,Email\r\n"Ana, Test","A ""Store""",ana@example.test')[1][1],'A "Store"');
+assert.equal(P.csv('Nombre;Empresa;Correo\nAna;Tienda;a@example.test')[1][0],'Ana');
+assert.throws(()=>P.csv('name\n"open'));
+assert.throws(()=>P.candidates(rows,1,{name:0,place:0,city:-1,state:-1,email:-1,phone:-1},'USA'));
+assert.throws(()=>P.candidates(rows,1,Object.fromEntries(['name','place','city','state','email','phone'].map(k=>[k,-1])),'USA'));
+console.log('PASS IMPORT: mapping, blank fields, company fallback, invalid row preview, duplicates, CSV escapes, exact provenance and untouched unrelated data.');
