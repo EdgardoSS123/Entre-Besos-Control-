@@ -131,14 +131,22 @@ document.addEventListener('input',e=>{if(!loaded||e.target.closest('#eb-cloud-sh
 document.addEventListener('click',async e=>{
  const b=e.target instanceof Element?e.target.closest('button,[type="submit"]'):null;if(!b||b.closest('#eb-cloud-shell,#eb-cloud-bar,.eb-shared-account'))return;
  if(who?.role==='reader'&&/^(Guardar|Eliminar|Editar|Nuevo|Nueva|Registrar|Capturar|Mover|Descontar|Restaurar|Importar|Duplicar|\+ Otro)/i.test(b.textContent.trim())){e.preventDefault();e.stopImmediatePropagation();status('EB2 · Solo consulta. Los cambios requieren un socio EB1.',true);return;}
- if(b.matches('#eb-report-pdf,#simple-print,#print-stock,[data-print]')&&!reportPass){
+ if(b.matches('#eb-report-pdf,#simple-print,#print-stock,[data-print]')&&!reportPass&&!window.EBReports?.handlesSharedSnapshot){
   e.preventDefault();e.stopImmediatePropagation();await flush();if(get(OUT)||conflict){status('El PDF espera a que tus cambios estén guardados en la base compartida.',true);return;}
   try{await api('session');await poll();if(!ready||document.documentElement.dataset.sharedStatus==='pending')throw Error('Conecta para generar el reporte actualizado.');reportPass=true;const current=b.isConnected?b:document.getElementById(b.id);current?.click();}catch(err){status(err.message,true);}finally{reportPass=false;}
  }
 },true);
 window.addEventListener('storage',e=>{if(e.key===META){const m=parse(get(META));if(m)revision=m.revision;}if(e.key===OUT&&!sending)setTimeout(flush,0);});
 window.addEventListener('beforeunload',e=>{if(get(OUT)){e.preventDefault();e.returnValue='';}});
-window.EBShared={user:null,get revision(){return revision;},flush,get pending(){return!!get(OUT);}};
+async function reportSnapshot(){
+ if(!ready||!who)throw Error('Inicia sesión para generar el reporte.');
+ await flush();
+ if(get(OUT)||conflict||sending)throw Error('Hay cambios pendientes de guardar. Confirma Actualizado y vuelve a generar el PDF.');
+ const row=await api('state');
+ if(!row.data)throw Error('Conecta primero la PC con tus datos. No se generará un resumen vacío.');
+ return row;
+}
+window.EBShared={user:null,get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
 async function boot(){screen('Conectando Entre Besos','Revisando acceso y datos compartidos…');try{const s=await api('session');if(!s.authenticated)return login();who=s.user;csrf=s.csrf;await connect();}catch(e){screen('Conectar Entre Besos',e.message,'<button id="eb-start-retry">Reintentar</button><button id="eb-start-backup" class="secondary">Respaldo local</button>');$('eb-start-retry').onclick=boot;$('eb-start-backup').onclick=()=>backup();}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

@@ -9,6 +9,7 @@
   }
   function snapshot(){const raw=localStorage.getItem('eb-v1');const d=raw===null?{lots:[],moves:[]}:JSON.parse(raw);if(!d||!Array.isArray(d.lots)||!Array.isArray(d.moves))throw Error('No se pudieron leer los registros guardados.');return d;}
   function context(){
+    if($('office-app'))return{type:'executive'};
     if($('materials-app'))return{type:new URLSearchParams(location.search).get('kind')==='supplies'?'supplies':'marketing',location:$('material-filter')?.value||'',search:$('material-search')?.value.trim()||''};
     if($('warehouse-filter'))return{type:'warehouse',location:$('warehouse-filter').value};
     if($('simple-produced'))return{type:'lot',lotId:document.querySelector('#app .heading h1')?.textContent.trim(),historyLocation:$('history-warehouse')?.value||''};
@@ -20,7 +21,8 @@
     return logoPromise;
   }
   async function generate(ctx){
-    const data=snapshot(),model=window.EBReportData.build(data,ctx,window.EBLedger);
+    const row=window.EBShared?.snapshot?await window.EBShared.snapshot():{data:snapshot()};
+    const data=row.data,model=ctx.type==='executive'?window.EBExecutive.build(data,window.EBLedger,row):window.EBReportData.build(data,ctx,window.EBLedger);
     if(!window.jspdf?.jsPDF)throw Error('No se cargó el generador PDF. Recarga esta pantalla.');
     const image=await logo(),{jsPDF}=window.jspdf,doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter',compress:true});
     if(typeof doc.autoTable!=='function')throw Error('No se cargaron las tablas PDF. Recarga esta pantalla.');
@@ -37,22 +39,22 @@
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...INK);const sub=doc.splitTextToSize(clean(model.subtitle),CW);doc.text(sub,M,y+13);y+=sub.length*17+5;
     paragraph('Alcance: '+model.scope,9);
     if(model.metrics.length){
-      const gap=10,n=model.metrics.length,cw=(CW-gap*(n-1))/n;room(82);const top=y;
+      const gap=10,n=model.metrics.length,cw=(CW-gap*(n-1))/n;doc.setFontSize(7.2);const cardHeight=Math.max(82,...model.metrics.map(m=>65+doc.splitTextToSize(clean(m.note||''),cw-20).length*9));room(cardHeight+8);const top=y;
       model.metrics.forEach((m,i)=>{
-        const x=M+i*(cw+gap);doc.setFillColor(245,247,251);doc.roundedRect(x,top,cw,78,6,6,'F');doc.setFillColor(...PINK);doc.roundedRect(x,top+12,3,20,1,1,'F');
+        const x=M+i*(cw+gap);doc.setFillColor(245,247,251);doc.roundedRect(x,top,cw,cardHeight,6,6,'F');doc.setFillColor(...PINK);doc.roundedRect(x,top+12,3,20,1,1,'F');
         doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...MUTED);doc.text(doc.splitTextToSize(clean(m.label),cw-20),x+10,top+14);
         let fs=21;doc.setFont('helvetica','bold');doc.setFontSize(fs);while(doc.getTextWidth(clean(m.value))>cw-20&&fs>10){doc.setFontSize(--fs);}doc.setTextColor(...INK);doc.text(clean(m.value),x+10,top+43);
         doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...MUTED);doc.text(doc.splitTextToSize(clean(m.note||''),cw-20),x+10,top+59);
-      });y+=94;
+      });y+=cardHeight+16;
     }
     for(const s of model.sections){
       room(64);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...INK);doc.text(clean(s.title),M,y+12);y+=21;
-      if(!s.body.length){paragraph('Sin registros guardados para este apartado.',9);continue;}
+      if(!s.body.length){paragraph(s.empty||'Sin registros guardados para este apartado.',9);if(s.note)paragraph(s.note,8);continue;}
       const styles={};(s.right||[]).forEach(i=>styles[i]={halign:'right'});
       doc.autoTable({startY:y,head:[s.head.map(clean)],body:s.body.map(r=>r.map(clean)),margin:{top:TOP,right:M,bottom:48,left:M},tableWidth:CW,theme:'striped',showHead:'everyPage',rowPageBreak:'avoid',
         styles:{font:'helvetica',fontSize:8.5,cellPadding:6,textColor:INK,lineColor:LINE,lineWidth:0.3,overflow:'linebreak',valign:'middle'},
         headStyles:{fillColor:INK,textColor:[255,255,255],fontStyle:'bold',fontSize:8.2,lineWidth:0},alternateRowStyles:{fillColor:[247,249,252]},columnStyles:styles});
-      y=doc.lastAutoTable.finalY+20;
+      y=doc.lastAutoTable.finalY+12;if(s.note)paragraph(s.note,8,MUTED,8);else y+=8;
     }
     if(model.notes.length){room(50);doc.setDrawColor(...LINE);doc.line(M,y,W-M,y);y+=12;for(const note of model.notes)paragraph(note,8,MUTED,4);}
     const count=doc.getNumberOfPages();
@@ -63,26 +65,41 @@
       doc.setFont('helvetica','normal');doc.setTextColor(...MUTED);doc.setFontSize(8.5);doc.text(clean('Generado: '+date+' · CDMX'),140,74);
       doc.setDrawColor(...PINK);doc.setLineWidth(1.5);doc.line(M,94,W-M,94);
       doc.setLineWidth(.5);doc.setDrawColor(...LINE);doc.line(M,H-35,W-M,H-35);
-      doc.setFontSize(7.5);doc.setTextColor(...MUTED);doc.text('ENTRE BESOS  |  Confidencial · Datos locales guardados · No es factura',M,H-21);doc.text('Página '+p+' de '+count,W-M,H-21,{align:'right'});
+      doc.setFontSize(7.5);doc.setTextColor(...MUTED);doc.text('ENTRE BESOS | Confidencial | '+(row.revision!==undefined?'Base compartida v'+row.revision:'Datos guardados')+' | No es factura',M,H-21);doc.text('Página '+p+' de '+count,W-M,H-21,{align:'right'});
     }
     const slug=clean(model.file).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80);
     const localDate=generated.toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'});
     return{blob:doc.output('blob'),name:'Entre-Besos-'+slug+'-'+localDate+'.pdf',model,pages:count};
   }
+  function readyDialog(result,url){
+    document.getElementById('eb-pdf-ready')?.remove();
+    const dialog=document.createElement('dialog');dialog.id='eb-pdf-ready';
+    const title=document.createElement('h2');title.textContent='Tu resumen está listo';
+    const note=document.createElement('p');note.textContent=result.pages+' páginas con logo y datos guardados. Si no se abrió la descarga, utiliza uno de estos botones.';
+    const save=document.createElement('a');save.href=url;save.download=result.name;save.textContent='Descargar PDF';
+    const open=document.createElement('a');open.href=url;open.target='_blank';open.rel='noopener';open.textContent='Abrir PDF';
+    dialog.append(title,note,save,open);
+    const file=new File([result.blob],result.name,{type:'application/pdf'});
+    if(navigator.canShare?.({files:[file]})){
+      const share=document.createElement('button');share.textContent='Compartir PDF';share.onclick=async()=>{try{await navigator.share({files:[file],title:'Entre Besos · Resumen general'});}catch(e){if(e.name!=='AbortError')note.textContent='No se pudo compartir. Usa Descargar PDF.';}};dialog.append(share);
+    }
+    const close=document.createElement('button');close.textContent='Volver a la app';close.onclick=()=>dialog.close();dialog.append(close);
+    dialog.addEventListener('close',()=>{dialog.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);},{once:true});document.body.append(dialog);dialog.showModal();
+  }
   async function download(ctx){
     if(busy)return;busy=true;const button=$('eb-report-pdf');if(button){button.disabled=true;button.textContent='PDF...';}
     try{
-      const result=await generate(ctx||context()),url=URL.createObjectURL(result.blob),a=document.createElement('a');a.href=url;a.download=result.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),120000);notify('PDF generado con logo y diseño. Solo incluye datos guardados.');return result;
+      const result=await generate(ctx||{type:'executive'}),url=URL.createObjectURL(result.blob),a=document.createElement('a');a.href=url;a.download=result.name;document.body.append(a);a.click();a.remove();readyDialog(result,url);notify('PDF listo: puedes descargarlo, abrirlo o compartirlo.');return result;
     }catch(e){notify('No se generó el PDF. '+e.message,true);return null;}
     finally{busy=false;if(button){button.disabled=false;button.textContent='PDF';}}
   }
   const controls=document.querySelector('.topbar .controls-row');
-  if(controls&&!$('eb-report-pdf')){const b=document.createElement('button');b.className='secondary';b.id='eb-report-pdf';b.type='button';if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar reporte PDF con logo';b.setAttribute('aria-label','Descargar reporte PDF con logo');b.onclick=()=>download();controls.prepend(b);}
+  if(controls&&!$('eb-report-pdf')){const b=document.createElement('button');b.className='secondary';b.id='eb-report-pdf';b.type='button';if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar resumen general con logo';b.setAttribute('aria-label','Descargar resumen general PDF con logo');b.onclick=()=>download();controls.prepend(b);}
   document.addEventListener('click',e=>{
     const b=e.target instanceof Element?e.target.closest('#simple-print,[data-print],#print-stock'):null;if(!b)return;
     e.preventDefault();e.stopImmediatePropagation();download(b.dataset.print?{type:'lot',lotId:b.dataset.print}:context());
   },true);
   const rename=()=>{document.querySelectorAll('#simple-print,#print-stock').forEach(b=>{if(b.textContent!=='PDF')b.textContent='PDF';b.title='Descargar reporte PDF con logo';});};
   const app=$('app');if(app){const observer=new MutationObserver(rename);observer.observe(app,{childList:true,subtree:true});rename();}
-  window.EBReports={context,generate,download};
+  window.EBReports={context,generate,download,handlesSharedSnapshot:true};
 })();
