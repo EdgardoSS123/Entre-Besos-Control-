@@ -1,0 +1,19 @@
+name: Summary contacts source
+on:
+  push:
+    branches: [work/summary-contacts]
+    paths: ['.github/workflows/summary-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/eb-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eb-summary-source
+          path: /tmp/eb-source.zip
+          retention-days: 1
