@@ -1,0 +1,65 @@
+name: Verify Excel contact import
+on:
+  push:
+    branches: [main, work/contact-file-import]
+    paths: ['contacts-import.js', 'tests/*contact-import*', '.github/scripts/install-contact-import.py', '.github/workflows/contact-import.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate on development branch only
+        if: github.ref == 'refs/heads/work/contact-file-import'
+        run: python3 .github/scripts/install-contact-import.py
+      - name: Verify calculations and unchanged business data
+        run: |
+          node --check contacts-import.js
+          node tests/contact-import.cjs
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+      - name: Prepare pinned browser runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Verify synthetic Excel in desktop and mobile
+        run: python3 tests/browser-contact-import.py
+      - name: Verify production build
+        if: github.ref == 'refs/heads/work/contact-file-import'
+        run: docker build -t eb-contact-import-test .
+      - name: Commit verified integration
+        if: github.ref == 'refs/heads/work/contact-file-import'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add office.html office-ui.js .github/scripts/build-pdf.sh Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar importación directa de contactos Excel sin modificar registros'
+            git push origin HEAD:work/contact-file-import
+          fi
+      - name: Verify published assets
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(35):
+              try:
+                  for name in ['office.html','office-ui.js','contacts-import.js','vendor/fflate.js']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  print('PASS exact deployed Excel importer. No production data read or modified.');break
+              except Exception:
+                  if attempt==34:raise
+                  time.sleep(4)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contact-import-review
+          path: /tmp/eb-import-review/*.png
+          retention-days: 2
