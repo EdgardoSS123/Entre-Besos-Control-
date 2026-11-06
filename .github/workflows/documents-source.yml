@@ -1,0 +1,19 @@
+name: Documents source
+on:
+  push:
+    branches: [work/shared-documents]
+    paths: ['.github/workflows/documents-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/eb-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eb-documents-source
+          path: /tmp/eb-source.zip
+          retention-days: 1
