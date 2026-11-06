@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),E=require('../executive-core.js');
+let I=require('../inventory-core.js');I=require('../commerce-core.js')(I);I=require('../simple-core.js')(I);I=require('../corrections-core.js')(I);
+const day='2026-11-04';let d={lots:[{id:'PARTNER-TEST',p:0,bottles:60,unitCost:200,totalCost:12000,ml:720}],moves:[],contacts:[],sales:[{client:'Legacy client',amount:321,currency:'MXN',status:'private-payment-status'}]};
+d=I.initializeOrigin(d,'PARTNER-TEST','Oaxaca',day,day);
+d=I.sellStock(d,'PARTNER-TEST',{id:'paid-sale',from:'Oaxaca',tag:'Por clasificar',amount:6,unit:'bottle',price:'1000',priceBasis:'bottle',currency:'MXN',customer:'MX client',payment:'paid',stamp:day},day);
+d=I.sellStock(d,'PARTNER-TEST',{id:'pending-sale',from:'Oaxaca',tag:'Por clasificar',amount:4,unit:'bottle',price:'100',priceBasis:'bottle',currency:'USD',customer:'US client',payment:'pending',stamp:day},day);
+const original=JSON.stringify(d),m=E.build(d,I),sales=m.sections.find(s=>s.title==='Ventas');
+assert.deepEqual(sales.head,['Moneda','Ventas']);assert.deepEqual(sales.body,[['MXN',E.money(6000,'MXN')],['USD',E.money(400,'USD')]]);
+const detail=m.sections.find(s=>s.title==='Ventas por cliente');assert.deepEqual(detail.head,['Lote','Cliente','Origen','Botellas','Venta']);assert(detail.body.every(r=>r.length===5));
+const old=m.sections.find(s=>s.title==='Ventas antiguas sin vínculo a lote');assert.deepEqual(old.head,['Cliente','Fecha','Importe']);assert(old.body.every(r=>r.length===3));
+const visible=JSON.stringify({sections:m.sections,metrics:m.metrics,notes:m.notes});
+for(const term of ['Cobrado registrado','Por cobrar','Pago por aclarar','cobranza','Ventas y saldos','private-payment-status'])assert(!visible.includes(term),term);
+assert.equal(m.summary.finance.MXN.sales,600000);assert.equal(m.summary.finance.MXN.paid,600000);assert.equal(m.summary.finance.USD.pending,40000);
+assert.equal(JSON.stringify(d),original,'Reporting must never modify original payments or inventory.');
+console.log('PASS PARTNER SALES: sales totals and currencies preserved; collection columns and client payment status excluded from presentation; private accounting data unchanged.');

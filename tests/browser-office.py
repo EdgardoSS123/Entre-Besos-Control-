@@ -48,7 +48,8 @@ try:
   import pymupdf
   for name in ['PC','iPhone']:
    doc=pymupdf.open(OUT/('resumen-prueba-'+name+'.pdf'));text=' '.join((' '.join(page.get_text() for page in doc)).split())
-   for t in ['Dónde estamos parados','1,483','Cobrado registrado','Pago por aclarar','Gorras','Tapones','USD','México']:assert t in text,(name,t)
+   for t in ['Dónde estamos parados','1,483','Ventas','10,000.00','250.00','Gorras','Tapones','USD','México']:assert t in text,(name,t)
+   for t in ['Dinero: ventas y cobranza','Cobrado registrado','Por cobrar conocido','Pago por aclarar','Ventas y saldos por cliente','Por cobrar','Pagada','Pendiente','Por aclarar']:assert t not in text,(name,'Unexpected collection information',t)
    assert len(doc)>=2
    for i,page in enumerate(doc):
     for block in page.get_text('dict')['blocks']:
@@ -62,7 +63,7 @@ try:
   with a.expect_download() as event:a.locator('#eb-report-pdf').click()
   event.value.save_as(str(OUT/'resumen-desde-insumos.pdf'))
   assert not errors,errors
-  print('PASS OFFICE: global branded PDF on PC/WebKit, explicit open/download, all inventories and money, countries, contact edits, bidirectional sync, EB2 read-only, preservation, navigation and page bounds.')
+  print('PASS OFFICE: partner PDF shows sales only, with no collection columns or payment statuses; original payments, inventories and costs preserved; PC/WebKit downloads, contacts, bidirectional sync, EB2 read-only, navigation and page bounds.')
   pc.close();phone.close();reader.close();wb.close();browser.close()
 finally:
  server.terminate();server.wait(timeout=10)

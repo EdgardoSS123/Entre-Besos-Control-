@@ -29,11 +29,12 @@ function build(d,I,opts={}){
   const priced=s.priceKnown!==false&&valid(s.totalCents),st=I.saleStatus(s,new Date().toISOString().slice(0,10));
   if(priced){f.sales+=Number(s.totalCents);if(valid(st.paidCents)&&valid(st.pendingCents)){f.paid+=Number(st.paidCents);f.pending+=Number(st.pendingCents);}else f.unknownPayment+=Number(s.totalCents);}else{f.unknownPrice++;unpriced.push([l.id,s.customer||'Sin cliente',num(s.quantity)+' botellas']);}
   finance.set(c,f);
-  salesDetail.push([l.id,s.customer||'Sin cliente',s.from||'Sin bodega',num(s.quantity),priced?money(Number(s.totalCents)/100,c):'Precio pendiente',valid(st.pendingCents)?money(st.pendingCents/100,c):'Por aclarar',st.status]);
+  salesDetail.push([l.id,s.customer||'Sin cliente',s.from||'Sin bodega',num(s.quantity),priced?money(Number(s.totalCents)/100,c):'Precio pendiente']);
  }
  const stockNote=totals.missingCount?totals.missingCount+' lote(s) sin conteo':'En todas las ubicaciones';
  model.metrics=[{label:'SALDO EN BODEGAS',value:num(totals.stock),note:stockNote},{label:'VENDIDAS',value:num(totals.sold),note:'Botellas registradas'},{label:'MUESTRAS ENTREGADAS',value:num(totals.samples),note:'Botellas · ingreso $0'},{label:'LOTES REGISTRADOS',value:num(balances.length),note:num(totals.produced)+' botellas producidas'}];
- model.sections.push(section('Dinero: ventas y cobranza',['Moneda','Ventas con precio','Cobrado registrado','Por cobrar conocido','Pago por aclarar'],[...finance].map(([c,f])=>[c,money(f.sales/100,c),money(f.paid/100,c),money(f.pending/100,c),money(f.unknownPayment/100,c)]),[1,2,3,4],{note:'Ventas no es lo mismo que efectivo. «Pago por aclarar» tiene precio, pero no un estado de cobro confirmado.'}));
+ // Partner-facing presentation exposes sales only. Internal collection records and totals remain unchanged.
+ model.sections.push(section('Ventas',['Moneda','Ventas'],[...finance].map(([c,f])=>[c,money(f.sales/100,c)]),[1]));
  model.sections.push(section('Lo que tenemos y lo que ha costado',['Concepto','Importe registrado','Lectura'],[
  ['Producción de los lotes',money(totals.productionCost),totals.missingProductionCost?totals.missingProductionCost+' lote(s) sin costo total':'Costo de producción; no equivale a dinero disponible'],
  ['Producto en bodegas, a costo',money(totals.stockCost),totals.missingStockCost?totals.missingStockCost+' lote(s) sin costo por botella':'Saldo por lote × su costo por botella'],
@@ -51,10 +52,10 @@ function build(d,I,opts={}){
   model.sections.push(section(label+' · existencias y costo',['Concepto / presentación','Ubicación','Cantidad','Costo total','Costo por unidad'],rows.map(r=>[String(r.name||'Sin concepto')+(r.presentation?'\n'+r.presentation:''),r.loc||'Sin ubicación',valid(r.qty)?num(Number(r.qty))+' '+(r.unit||'unidades'):'Sin capturar',money(r.totalCost,r.currency||'MXN'),valid(r.totalCost)&&Number(r.qty)>0?money(Number(r.totalCost)/Number(r.qty),r.currency||'MXN'):'No calculable']),[2,3,4]));
   model.sections.push(section('Total registrado · '+label.toLowerCase(),['Moneda','Costo total','Costos pendientes'],[...costs].map(([c,n])=>[c,money(n,c),num(missing)+' registros sin costo']),[1,2],{empty:rows.length?'No hay costos capturados. Los materiales no se consideran gratuitos.':'Sin inventario registrado; no se asume existencia cero.'}));
  }
- model.sections.push(section('Ventas y saldos por cliente',['Lote','Cliente','Origen','Botellas','Venta','Por cobrar','Estado'],salesDetail,[3,4,5]));
+ model.sections.push(section('Ventas por cliente',['Lote','Cliente','Origen','Botellas','Venta'],salesDetail,[3,4]));
  if(unpriced.length)model.sections.push(section('Ventas que aún no tienen precio',['Lote','Cliente','Cantidad'],unpriced,[2]));
  const legacy=arr(d,'sales').filter(s=>s.status!=='cancelled');
- if(legacy.length)model.sections.push(section('Ventas antiguas sin vínculo a lote',['Cliente','Fecha','Importe','Estado'],legacy.map(s=>[s.client||s.customer||'Sin cliente',s.date||'Sin fecha',money(s.amount,s.currency||'MXN'),s.status||'Por aclarar']),[2],{note:'Se muestran aparte y NO se suman a ventas por lote: primero hay que confirmar si son operaciones distintas o duplicadas.'}));
+ if(legacy.length)model.sections.push(section('Ventas antiguas sin vínculo a lote',['Cliente','Fecha','Importe'],legacy.map(s=>[s.client||s.customer||'Sin cliente',s.date||'Sin fecha',money(s.amount,s.currency||'MXN')]),[2],{note:'Se muestran aparte y NO se suman a ventas por lote: primero hay que confirmar si son operaciones distintas o duplicadas.'}));
  const expenses=arr(d,'expenses').filter(x=>x.status!=='cancelled'),expenseTotals=new Map();
  expenses.forEach(e=>{if(valid(e.amount)){const c=e.currency||'MXN';expenseTotals.set(c,(expenseTotals.get(c)||0)+Number(e.amount));}});
  model.sections.push(section('Gastos registrados',['Concepto','Fecha / mes','Importe','Notas'],expenses.map(e=>[e.type||e.name||e.concept||'Sin concepto',e.date||e.month||'Sin fecha',money(e.amount,e.currency||'MXN'),e.notes||'']),[2]));
