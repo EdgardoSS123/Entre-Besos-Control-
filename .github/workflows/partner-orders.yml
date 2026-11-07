@@ -16,7 +16,20 @@ jobs:
           node-version: '22'
       - name: Integrate on isolated development branch
         if: github.ref == 'refs/heads/work/partner-orders'
-        run: python3 .github/scripts/install-orders.py
+        run: |
+          python3 .github/scripts/install-orders.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('orders-ui.js');s=p.read_text()
+          s=s.replace("new Date(v+'T12:00:00Z')", "new Date(v.length>10?v:v+'T12:00:00Z')")
+          s=s.replace("when((r.deliveredAt||'').slice(0,10))", "when(r.deliveredAt||'')")
+          p.write_text(s)
+          p=Path('tests/browser-orders.py');s=p.read_text()
+          marker="capture(a,'orders-delivered-desktop')"
+          check="expect(a.locator('.order-record > .order-stock-note')).to_contain_text(a.evaluate(\"()=>new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric',timeZone:'America/Mexico_City'})\"));"
+          if check not in s:s=s.replace(marker,check+marker,1)
+          p.write_text(s)
+          PY
       - name: Verify all ledger calculations and order invariants
         run: |
           for f in *.js; do node --check "$f"; done
@@ -37,7 +50,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add orders.html simple-core.js corrections-core.js simple-lot.js executive-core.js reports-data.js office-nav.js control.html materials.html office.html documents.html index.html Dockerfile
+          git add orders.html orders-ui.js tests/browser-orders.py simple-core.js corrections-core.js simple-lot.js executive-core.js reports-data.js office-nav.js control.html materials.html office.html documents.html index.html Dockerfile
           if ! git diff --cached --quiet; then
             git commit -m 'Integrar Pedidos de socios con entrega reversible y saldo compartido'
             git push origin HEAD:work/partner-orders
