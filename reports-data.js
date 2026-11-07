@@ -69,6 +69,7 @@
     if(!ctx.lotId&&ctx.type!=='warehouse'){
       for(const kind of ['marketing','supplies']){const m=materials(d,kind);model.sections.push(m.section);if(m.rows.length)model.sections.push(section('Costo capturado · '+(kind==='marketing'?'marketing':'insumos'),['Moneda','Total conocido','Sin costo capturado'],Object.entries(m.totals).map(([c,n])=>[c,money(n,c),number(m.missing)+' registros']),[1,2]));}
     }
+    const orderExits=balances.filter(({b})=>b.orderDelivered);if(orderExits.length)model.sections.push(section('Salidas por pedidos',['Lote','Botellas entregadas'],orderExits.map(({l,b})=>[l.id,number(b.orderDelivered)]),[1],{note:'Salidas descontadas de existencias. No generan ventas con precio ni cobros automáticamente.'}));
     model.notes.push('1 caja (corrugado) = 6 botellas; 1 pallet = 80 cajas (480 botellas). Las cajas del desglose están fuera de los pallets; las sueltas están fuera de las cajas. No es inventario de cartón vacío.','Las muestras reservadas siguen físicamente en la bodega; las entregadas se descuentan. Un traslado interno cambia la ubicación, no la producción.','Las diferencias y saldos negativos se conservan tal como resultan de tus registros. Las ventas históricas anteriores al conteo no se descuentan otra vez.','Las monedas se presentan por separado, sin aplicar un tipo de cambio. Los registros sin precio o costo no se consideran gratuitos.');
     return model;
   }

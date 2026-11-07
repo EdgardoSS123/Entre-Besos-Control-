@@ -58,8 +58,9 @@
     const legacy=I.shipments(d,id).filter(s=>active(s)&&s.historical&&I.purposeOf(s)==='sale'&&!linked.has(s.id)&&Number.isSafeInteger(s.quantity)).reduce((n,s)=>n+s.quantity,0);
     const linkedHistorical=ss.filter(s=>s.shipmentId&&I.shipments(d,id).some(x=>x.id===s.shipmentId&&x.historical)).reduce((n,s)=>n+s.quantity,0);
     const sold=b.deliveredSales+historical+legacy+linkedHistorical;
-    const used=b.samplesUsed||0,produced=Number(l.bottles)||0,unexplained=produced-b.knownTotal-sold-used;
-    return{...b,produced,sold,used,unexplained,accounted:b.knownTotal+sold+used};
+    const orderDelivered=(d.lotStockAdjustments||[]).filter(a=>a.lotId===id&&a.source==='partner-order'&&active(a)).reduce((n,a)=>n-a.delta,0);
+    const used=b.samplesUsed||0,produced=Number(l.bottles)||0,unexplained=produced-b.knownTotal-sold-used-orderDelivered;
+    return{...b,produced,sold,used,orderDelivered,unexplained,accounted:b.knownTotal+sold+used+orderDelivered};
   }
   function moveStock(d,id,input,now){
     if(input.from===input.to)fail('Elige un destino distinto al origen.');

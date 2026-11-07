@@ -8,7 +8,7 @@
   const fail = m => { throw Error(m); };
   const alive = x => x.status !== 'cancelled';
   const eq = (a,b) => JSON.stringify(a) === JSON.stringify(b);
-  const owns = (x,id) => x && (x.lotId === id || x.lot === id);
+  const owns = (x,id) => x && (x.lotId === id || x.lot === id || (Array.isArray(x.lines)&&x.lines.some(r=>r.lotId===id))); 
   function getLot(d,id) { const l=(d.lots||[]).find(x=>x.id===id); if(!l) fail('El lote ya no existe. Abre Mis lotes.'); return l; }
   function checkToken(record,expected) { if(expected !== undefined && expected !== null && JSON.stringify(record)!==expected) fail('Este registro cambió en otra pestaña. Vuelve a abrirlo antes de corregirlo.'); }
   function date(v,now,optional=false) { if(!v&&optional)return null; if(!/^\d{4}-\d{2}-\d{2}$/.test(v)||isNaN(Date.parse(v))||new Date(v+'T12:00:00Z').toISOString().slice(0,10)!==v||v>now)fail('Revisa la fecha.');return v; }
@@ -21,18 +21,18 @@
   function finish(d,next,ids,title,meta={}) {validate(next,ids);const before=bundle(d,ids),after=bundle(next,ids);if(eq(before,after))return next;next.editHistory=next.editHistory||[];const positions={};for(const k of Object.keys(before))positions[k]=(d[k]||[]).map((x,i)=>(k==='lots'?ids.includes(x.id):ids.some(id=>owns(x,id)))?i:-1).filter(i=>i>=0);next.editHistory.push({id:meta.id,at:meta.stamp,lotIds:ids,title,before,after,positions,deleted:!!meta.deleted});return next;}
   function relatedCount(d,id){return Object.entries(bundle(d,[id])).filter(([k])=>k!=='lots'&&!k.toLowerCase().includes('revision')).reduce((s,[,v])=>s+v.length,0);}
   function correctLot(d,id,record,expected,meta) {
-    const old=getLot(d,id);checkToken(old,expected);const newId=String(record.id||'').trim();
+    const old=getLot(d,id);checkToken(old,expected);if(old.p!==record.p&&(d.partnerOrders||[]).some(r=>!['cancelled','deleted'].includes(r.status)&&r.lines.some(l=>l.lotId===id)))fail('Corrige primero los pedidos vinculados antes de cambiar la variedad del lote.');const newId=String(record.id||'').trim();
     if(!newId||newId.length>80)fail('Escribe el código del lote (máximo 80 caracteres).');
     if((d.lots||[]).some(l=>l.id!==id&&String(l.id).toLocaleLowerCase()===newId.toLocaleLowerCase()))fail('Ya existe otro lote con ese código. No se combinaron los registros.');
     if(!Number.isInteger(record.p)||record.p<0||record.p>2||!Number.isSafeInteger(record.bottles)||record.bottles<1||!Number.isFinite(record.unitCost)||record.unitCost<0||!Number.isFinite(record.ml)||record.ml<=0)fail('Revisa los datos y el cálculo del lote.');
-    const next=copy(d);if(newId!==id)for(const [k,arr] of Object.entries(next)){if(k==='editHistory'||k==='lots'||!Array.isArray(arr))continue;for(const item of arr){if(item.lotId===id)item.lotId=newId;if(item.lot===id)item.lot=newId;}}
+    const next=copy(d);if(newId!==id)for(const [k,arr] of Object.entries(next)){if(k==='editHistory'||k==='lots'||!Array.isArray(arr))continue;for(const item of arr){if(item.lotId===id)item.lotId=newId;if(item.lot===id)item.lot=newId;if(k==='partnerOrders')for(const line of item.lines||[])if(line.lotId===id)line.lotId=newId;}}
     next.lots[next.lots.findIndex(l=>l.id===id)]={...copy(record),id:newId};
     (next.lotRevisions=next.lotRevisions||[]).push({lotId:newId,replacedAt:meta.stamp,record:copy(old)});
     const initialized=record.originWarehouse?I.initializeOrigin(next,newId,record.originWarehouse,meta.localDate||(meta.stamp||'').slice(0,10),meta.stamp):next;
     return finish(d,initialized,[...new Set([id,newId])],'Editar lote '+id+(id!==newId?' → '+newId:''),meta);
   }
-  function removeLot(d,id,expected,meta){checkToken(getLot(d,id),expected);const next=copy(d);for(const [k,arr] of Object.entries(next)){if(k==='editHistory'||!Array.isArray(arr))continue;next[k]=arr.filter(x=>k==='lots'?x.id!==id:!owns(x,id));}return finish(d,next,[id],'Eliminar lote '+id,{...meta,deleted:true});}
-  function find(d,id,kind,rid) {getLot(d,id);const map={sale:'lotSales',move:'lotShipments',sample:'lotSampleActions',count:'lotStockAdjustments'};const k=map[kind];if(!k)fail('Tipo de registro desconocido.');const r=(d[k]||[]).find(x=>x.id===rid&&x.lotId===id);if(!r)fail('Registro no encontrado.');return{k,r};}
+  function removeLot(d,id,expected,meta){if((d.partnerOrders||[]).some(r=>!['cancelled','deleted'].includes(r.status)&&r.lines.some(l=>l.lotId===id)))fail('Este lote tiene pedidos vinculados. Cancela esos pedidos antes de eliminarlo.');checkToken(getLot(d,id),expected);const next=copy(d);for(const [k,arr] of Object.entries(next)){if(k==='editHistory'||!Array.isArray(arr))continue;next[k]=arr.filter(x=>k==='lots'?x.id!==id:!owns(x,id));}return finish(d,next,[id],'Eliminar lote '+id,{...meta,deleted:true});}
+  function find(d,id,kind,rid) {getLot(d,id);const map={sale:'lotSales',move:'lotShipments',sample:'lotSampleActions',count:'lotStockAdjustments'};const k=map[kind];if(!k)fail('Tipo de registro desconocido.');const r=(d[k]||[]).find(x=>x.id===rid&&x.lotId===id);if(!r)fail('Registro no encontrado.');if(kind==='count'&&r.source==='partner-order')fail('Modifica o cancela esta entrega desde Pedidos; así se conserva el descuento correcto.');return{k,r};}
   function correctSale(d,id,rid,p,expected,meta,now) {
     const {r:s}=find(d,id,'sale',rid);checkToken(s,expected);const next=copy(d),t=next.lotSales.find(x=>x.id===rid&&x.lotId===id);
     const mode=s.shipmentId?'shipment':p.historical?'historical':'direct',historical=mode==='historical';
