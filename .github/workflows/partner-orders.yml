@@ -1,0 +1,78 @@
+name: Verify partner orders
+on:
+  push:
+    branches: [main, work/partner-orders]
+    paths: ['orders*', 'tests/*orders*', '.github/scripts/install-orders.py', '.github/workflows/partner-orders.yml', 'simple-core.js', 'corrections-core.js']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate on isolated development branch
+        if: github.ref == 'refs/heads/work/partner-orders'
+        run: python3 .github/scripts/install-orders.py
+      - name: Verify all ledger calculations and order invariants
+        run: |
+          for f in *.js; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+          EB_ORDERS_FIXTURE=/tmp/eb-orders-fixture.json node tests/orders.cjs
+      - name: Prepare desktop WebKit and PDF test runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0 pymupdf==1.26.5
+          python3 -m playwright install --with-deps webkit
+      - name: Verify shared order capture delivery reversal and reports
+        run: python3 tests/browser-orders.py
+      - name: Verify production image
+        if: github.ref == 'refs/heads/work/partner-orders'
+        run: docker build -t eb-orders-test .
+      - name: Commit only verified integration changes
+        if: github.ref == 'refs/heads/work/partner-orders'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orders.html simple-core.js corrections-core.js simple-lot.js executive-core.js reports-data.js office-nav.js control.html materials.html office.html documents.html index.html Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar Pedidos de socios con entrega reversible y saldo compartido'
+            git push origin HEAD:work/partner-orders
+          fi
+      - name: Verify exact published files and authentication boundary
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          names=['orders.html','orders-core.js','orders-ui.js','orders.css','simple-core.js','corrections-core.js','simple-lot.js','executive-core.js','reports-data.js','office-nav.js']
+          for attempt in range(45):
+              try:
+                  for name in names:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('Protected data unexpectedly public')
+          except urllib.error.HTTPError as e:
+              assert e.code==401
+          print('PASS exact published orders and authenticated data boundary. No real user data read or changed.')
+          PY
+      - name: Package isolated review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-orders-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-orders-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: partner-orders-review
+          path: /tmp/eb-orders-review
+          retention-days: 2
