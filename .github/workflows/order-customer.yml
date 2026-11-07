@@ -1,0 +1,68 @@
+name: Verify order recipient
+on:
+  push:
+    branches: [main, work/order-customer]
+    paths: ['orders*', 'tests/*orders*', '.github/scripts/install-order-customer.py', '.github/workflows/order-customer.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate recipient on development branch only
+        if: github.ref == 'refs/heads/work/order-customer'
+        run: python3 .github/scripts/install-order-customer.py
+      - name: Verify all existing calculations and recipient invariants
+        run: |
+          for f in *.js; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+          EB_ORDERS_FIXTURE=/tmp/eb-orders-fixture.json node tests/orders.cjs
+      - name: Prepare isolated browser runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Test recipient fields PC-mobile sync and unchanged stock
+        run: python3 tests/browser-orders-customer.py
+      - name: Commit verified application changes on development branch
+        if: github.ref == 'refs/heads/work/order-customer'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orders-core.js orders-ui.js orders.html orders.css tests/orders.cjs tests/browser-orders.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Agregar cliente a pedidos sin volver a descontar inventario'
+            git push origin HEAD:work/order-customer
+          fi
+      - name: Verify exact deployed recipient files without reading user data
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(45):
+              try:
+                  for name in ['orders-core.js','orders-ui.js','orders.html','orders.css']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('Protected data unexpectedly public')
+          except urllib.error.HTTPError as e:
+              assert e.code==401
+          print('PASS exact deployed recipient field and authentication. No real records read or modified.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: order-recipient-review
+          path: /tmp/eb-orders-customer-review
+          retention-days: 2
