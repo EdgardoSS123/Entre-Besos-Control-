@@ -5,7 +5,7 @@ const day='2026-11-06',stamp=day+'T18:00:00Z';let counter=0;
 const meta=(id,before)=>({id,operation:'test-operation-'+(++counter),day,stamp,actor:'test-editor',...(before?{expected:JSON.stringify(before)}:{})});
 let d={lots:[{id:'ORD-ESP',p:0,bottles:120,ml:720,unitCost:200,totalCost:24000},{id:'ORD-CUP',p:1,bottles:60,ml:720,unitCost:300,totalCost:18000}],moves:[],contacts:[{country:'USA',name:'Keep'}],materials:[{name:'Gorras',qty:4,totalCost:100}],supplies:[{name:'Tapones',qty:100}],expenses:[{amount:10}],documents:[{id:'protected-doc'}]};
 d=I.initializeOrigin(d,'ORD-ESP','CDMX',day,stamp);d=I.initializeOrigin(d,'ORD-CUP','Oaxaca',day,stamp);
-const original=JSON.stringify(d),input={partner:'edgardo',from:'CDMX',date:'2026-11-10',status:'pending',notes:'Prueba aislada',lines:[{product:0,lotId:'ORD-ESP',amount:'2',unit:'box'},{product:1,lotId:'ORD-CUP',amount:'3',unit:'bottle'}]};
+const original=JSON.stringify(d),input={partner:'edgardo',customer:'Cliente de prueba',from:'CDMX',date:'2026-11-10',status:'pending',notes:'Prueba aislada',lines:[{product:0,lotId:'ORD-ESP',amount:'2',unit:'box'},{product:1,lotId:'ORD-CUP',amount:'3',unit:'bottle'}]};
 let m=meta('order-test'),r=O.save(d,input,m,I);assert.equal(r.order.quantity,15);assert.equal(r.order.code,'PED-0001');assert.equal(I.balance(r.data,'ORD-ESP').total,120);assert(!r.data.lotStockAdjustments);assert.equal(JSON.stringify(d),original);
 d=r.data;assert.equal(O.save(d,input,m,I).data,d,'Exact operation retry is a no-op');
 const pending=r.order;r=O.setStatus(d,pending.id,'delivered',meta(pending.id,pending),I);d=r.data;

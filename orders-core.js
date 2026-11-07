@@ -22,10 +22,12 @@ function validate(d,input,I){
   return{product:lot.p,lotId:lot.id,amount:text(r.amount).replace(',','.'),unit:r.unit,quantity};
  });
  if(!Number.isSafeInteger(totals(lines)))fail('La cantidad del pedido está fuera de rango.');
+ const customer=text(input.customer);if(customer.length>240)fail('El nombre del cliente admite hasta 240 caracteres.');
  const notes=text(input.notes);if(notes.length>1000)fail('Las notas admiten hasta 1,000 caracteres.');
- return{partner,from,date:date(input.date),status,lines,quantity:totals(lines),notes};
+ return{partner,customer,from,date:date(input.date),status,lines,quantity:totals(lines),notes};
 }
-function signature(r){return JSON.stringify([r.partner,r.from,r.date,r.status,r.lines,r.notes]);}
+function signature(r){return JSON.stringify([r.partner,text(r.customer),r.from,r.date,r.status,r.lines,r.notes]);}
+function stockSignature(r){return JSON.stringify([r.from,r.status,r.lines.map(l=>[l.lotId,l.quantity])]);}
 function activeDebits(d,id){return(d.lotStockAdjustments||[]).filter(a=>a.source==='partner-order'&&a.orderId===id&&a.status!=='cancelled');}
 function reverse(next,id,stamp){for(const a of activeDebits(next,id)){a.status='cancelled';a.cancelledAt=stamp;a.cancelReason='Corrección o cancelación desde Pedidos';}}
 function debit(next,order,I,meta){
@@ -60,11 +62,15 @@ function save(d,input,options,I){
  const action=opts.action||'save';if(!['save','cancel','delete'].includes(action))fail('Acción no válida.');
  if(action!=='save'&&!before)fail('No se encontró el pedido.');
  const normalized=action==='save'?validate(d,input,I):{...copy(before),status:action==='cancel'?'cancelled':'deleted'};
+ if(action==='save'&&!normalized.customer&&(!before||text(before.customer)))fail('Indica para quién es el pedido.');
  if(before&&signature(before)===signature(normalized))return{data:d,order:before,unchanged:true,warnings:[]};
  const next=copy(d),version=(before?.version||0)+1;
  const after={...(before||{}),...normalized,id:opts.id,code:before?.code||'PED-'+String(source.length+1).padStart(4,'0'),version,createdAt:before?.createdAt||stamp,createdBy:before?.createdBy||opts.actor||'',updatedAt:stamp,updatedBy:opts.actor||'',deliveredAt:normalized.status==='delivered'?(before?.deliveredAt||stamp):null};
- reverse(next,opts.id,stamp);
- if(after.status==='delivered')debit(next,after,I,{operation,stamp,day,actor:opts.actor});
+ // A recipient-only edit must preserve the original stock exits byte for byte.
+ if(!before||stockSignature(before)!==stockSignature(after)){
+  reverse(next,opts.id,stamp);
+  if(after.status==='delivered')debit(next,after,I,{operation,stamp,day,actor:opts.actor});
+ }
  next.partnerOrders=next.partnerOrders||[];if(at<0)next.partnerOrders.push(after);else next.partnerOrders[at]=after;
  const lotIds=[...(before?.lines||[]),...after.lines].map(r=>r.lotId);
  const issues=warnings(next,I,lotIds);
