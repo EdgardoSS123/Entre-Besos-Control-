@@ -1,9 +1,9 @@
 /* View state only. Never writes business data or infers whether a save succeeded. */
 (function(){
 'use strict';
-const root=()=>document.querySelector('#app,#materials-app,#office-app,#orders-app,#documents-app');
-const filters=['search-lots','warehouse-filter','history-warehouse','material-search','material-filter','contact-search','docs-search','docs-status','orders-filter-from','orders-filter-to'];
-const attrs=['data-record-edit','data-stock-edit','data-edit-material','data-contact-edit','data-edit-doc','data-edit-order','data-edit','data-kind','data-payment-id'];
+const root=()=>document.querySelector('#app,#materials-app,#office-app,#orders-app,#documents-app,#suppliers-app');
+const filters=['search-lots','warehouse-filter','history-warehouse','material-search','material-filter','contact-search','docs-search','docs-status','orders-filter-from','orders-filter-to','supplier-search','supplier-filter'];
+const attrs=['data-record-edit','data-stock-edit','data-edit-material','data-contact-edit','data-edit-doc','data-edit-order','data-supplier-edit','data-edit','data-kind','data-payment-id'];
 function selector(el){
  if(!el||el===document.body)return'';
  if(el.id)return'#'+CSS.escape(el.id);
