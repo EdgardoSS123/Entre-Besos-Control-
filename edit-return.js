@@ -21,6 +21,7 @@ function capture(){
  const host=root();if(!host)return null;
  let scope='page',context=null;
  if(document.getElementById('simple-produced')){scope='simple';context=window.EBSimpleUI?.context?.();}
+ else if(document.getElementById('new-shipment')&&document.getElementById('stock-back')){scope='stock';}
  else if(document.getElementById('sale-panel')){scope='commerce';context=window.EBCommerceUI?.context?.();}
  else if(document.getElementById('warehouse-filter'))scope='warehouses';
  else if(document.getElementById('saved-list'))scope='lots';
@@ -43,6 +44,7 @@ function restore(state){
 }
 function refresh(state,lotId){
  if(state?.scope==='simple'&&window.EBSimpleUI){const c=state.context||{};window.EBSimpleUI.open(lotId||c.id,c.tab||'count',c.from);}
+ else if(state?.scope==='stock'&&lotId)window.EBOperations?.renderStock(lotId);
  else if(state?.scope==='commerce'&&window.EBCommerceUI){const c=state.context||{};window.EBCommerceUI.render(lotId||c.id,c.options||{});}
  else if(state?.scope==='warehouses')window.EBOperations?.renderWarehouses();
  else if(state?.scope==='lots')window.renderLots?.();

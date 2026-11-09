@@ -1,20 +1,22 @@
 import os, json, shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
-URL=os.environ.get('EB_TEST_URL','http://127.0.0.1:8765/').rstrip('/')+'/'
+from workspace_test import Workspace
+workspace=Workspace()
+URL=workspace.base
 OUT=Path(os.environ.get('EB_SCREENSHOTS','/tmp/eb-materials-checks'));OUT.mkdir(exist_ok=True,parents=True)
 seed={'lots':[{'id':'PRESERVE','unitCost':237.66,'bottles':438,'p':2,'date':'2024-11-03'}],'moves':[],'sales':[{'amount':9}],'contacts':[],'costs':{},'materials':[{'name':'Material histórico','qty':7,'loc':'Oaxaca','other':'keep'}]}
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
  for width in (1440,390,375):
-  ctx=browser.new_context(viewport={'width':width,'height':1000},accept_downloads=True)
+  ctx=workspace.context(browser,viewport={'width':width,'height':1000},accept_downloads=True)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(URL+'materials.html?kind=marketing');page.evaluate('(s)=>localStorage.setItem("eb-v1", JSON.stringify(s))',seed);page.reload()
+  workspace.goto(page,URL+'materials.html?kind=marketing');page.evaluate('(s)=>localStorage.setItem("eb-v1", JSON.stringify(s))',seed);workspace.reload(page)
   expect(page.locator('#material-name')).to_have_value('');expect(page.locator('#material-qty')).to_have_value('');expect(page.locator('#material-cost')).to_have_value('')
   expect(page.locator('[data-record="0"]')).to_contain_text('Sin capturar');assert page.evaluate('JSON.parse(localStorage.getItem("eb-v1")).materials[0]')==seed['materials'][0]
   page.locator('#material-name').fill('Playeras');page.locator('#material-location').select_option('CDMX');page.locator('#material-presentation').fill('M');page.locator('#material-qty').fill('20');page.locator('#material-cost').fill('3500')
   expect(page.locator('#material-unit')).to_have_text('$175.00');page.locator('#material-save').click();expect(page.locator('[data-record="1"]')).to_contain_text('$3,500.00')
-  page.reload();expect(page.locator('[data-record="1"]')).to_contain_text('Playeras');page.locator('[data-edit-material="1"]').click();page.locator('#material-qty').fill('30');page.locator('#material-cost').fill('4500');expect(page.locator('#material-unit')).to_have_text('$150.00');page.locator('#material-save').click()
+  workspace.reload(page);expect(page.locator('[data-record="1"]')).to_contain_text('Playeras');page.locator('[data-edit-material="1"]').click();page.locator('#material-qty').fill('30');page.locator('#material-cost').fill('4500');expect(page.locator('#material-unit')).to_have_text('$150.00');page.locator('#material-save').click()
   page.locator('#material-filter').select_option('CDMX');expect(page.locator('.material-record')).to_have_count(1);page.locator('#material-filter').select_option('');expect(page.locator('.material-record')).to_have_count(2)
   page.locator('#material-search').fill('histórico');expect(page.locator('.material-record')).to_have_count(1);page.locator('#material-search').fill('')
   page.screenshot(path=str(OUT/f'marketing-{width}.png'),full_page=True)

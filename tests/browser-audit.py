@@ -52,6 +52,16 @@ try:
    for marker in ['PRIVATE_BUYER','PRIVATE_CONTACT','PRIVATE_SUPPLIER','PRIVATE_NOTES','Cobrado','Por cobrar']:assert marker not in text
    assert 'Ventas' in text and 'AUDIT' in text and len(doc)>0
    doc[0].get_pixmap(matrix=pymupdf.Matrix(1.4,1.4)).save(OUT/f'partner-pdf-{width}.png');ctx.close()
+  # Same browser moves from an editor to a reader without granting cache export.
+  switched=editors[0][0];a.reload();ready(a);a.locator('#eb-cloud-account').click();a.locator('[data-out]').click();expect(a.locator('#eb-login')).to_be_visible()
+  a.locator('#eb-user').fill('socioEB2');a.locator('#eb-password').fill('audit-synthetic-password');a.locator('#eb-enter').click();expect(a.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000)
+  assert switched.request.get(BASE+'api/state').status==403
+  expect(a.locator('#order-new,#eb-cloud-account')).to_have_count(0)
+  a.goto(BASE+'instalar.html');downloads=[];a.on('download',lambda d:downloads.append(d));before=a.evaluate('localStorage.getItem("eb-v1")');assert before is not None
+  a.locator('#eb-app-backup').click();expect(a.locator('#eb-app-status')).to_contain_text('No se pudo generar el respaldo')
+  assert not downloads and a.evaluate('localStorage.getItem("eb-v1")')==before
+  a.locator('#eb-backup-file').set_input_files({'name':'reader-blocked.json','mimeType':'application/json','buffer':json.dumps(seed).encode()});expect(a.locator('#eb-app-status')).to_contain_text('requieren una sesión EB1');assert not downloads and a.evaluate('localStorage.getItem("eb-v1")')==before
+  print('PASS SAME BROWSER: editor logout, EB2 login, report only, server denies full state, install-page backup/import denied despite old cache; no records altered')
   assert not errors,errors
   print('PASS AUDIT UI: 3 named EB1 cross-edit/delete/recover; exact 480→468→480 balance; EB2 direct module URLs return report only; no workspace cache; server denial; PC and WebKit PDF with logo excludes private buyers, directories, notes and collections.')
   for ctx,_ in editors:ctx.close()

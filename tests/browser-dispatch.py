@@ -2,15 +2,17 @@
 import os, json, shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-BASE=os.environ.get('EB_TEST_URL','http://127.0.0.1:8765/')
+from workspace_test import Workspace
+workspace=Workspace()
+BASE=workspace.base
 OUT=Path(os.environ.get('EB_SCREENSHOTS','/tmp/eb-dispatch-screens'));OUT.mkdir(parents=True,exist_ok=True)
 seed={'lots':[{'id':'PRUEBA-ENVIO','p':0,'date':'2026-11-03','bottles':960,'ml':720,'unitCost':144,'totalCost':138240}], 'moves':[], 'contacts':[], 'costs':{}, 'inventoryOpenings':[{'lotId':'PRUEBA-ENVIO','asOf':'2026-11-03','complete':True,'rows':[{'location':'Oaxaca','tag':'Nacional','quantity':480}]}], 'documents':[{'preserve':'yes'}]}
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path=shutil.which('chromium') or shutil.which('google-chrome'),headless=True,args=['--no-sandbox'])
  for width,height in [(1440,1000),(390,844),(375,812)]:
-  ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
+  ctx=workspace.context(browser,viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(BASE+'?classic=1',wait_until='networkidle');page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',seed);page.reload();page.locator('#show-lots').click()
+  workspace.goto(page,BASE+'?classic=1',wait_until='networkidle');page.evaluate('(d)=>localStorage.setItem("eb-v1",JSON.stringify(d))',seed);workspace.reload(page);page.locator('#show-lots').click()
   page.get_by_role('button',name='Inventario y envíos',exact=True).click();page.locator('#new-shipment').click()
   assert page.locator('#ship-unit').input_value()=='box'
   page.locator('#ship-kind').select_option('distributor');page.locator('#new-destination').click()
@@ -43,7 +45,7 @@ with sync_playwright() as p:
   page.evaluate('window.print=()=>{}');page.locator('#stock-print').click()
   report=page.locator('#print-view').inner_text()
   assert '10 cajas (60 botellas)' in report and 'Entrega por venta' in report and 'Distribuidor' in report
-  page.reload();page.locator('#lot-id').wait_for()
+  workspace.reload(page);page.locator('#lot-id').wait_for()
   data=page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")
   assert len(data['lotShipments'])==2 and data['lots'][0]['unitCost']==144 and data['documents']==[{'preserve':'yes'}]
   assert data['lotShipments'][0]['destination']['contact']=='Contacto de prueba'

@@ -16,7 +16,8 @@ async function api(url,options={}){
  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);
  try{const r=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...options,headers:{'Content-Type':'application/json',...(csrf?{'X-EB-CSRF':csrf}:{}),...options.headers},signal:abort.signal});let d;try{d=await r.json();}catch{throw Error('La conexión compartida no respondió. No borres los datos.');}if(!r.ok)throw Object.assign(Error(d.error||'No se pudo sincronizar.'),{status:r.status});return d;}finally{clearTimeout(timer);}
 }
-function backup(raw=get(KEY),name='Entre-Besos-respaldo'){
+async function backup(raw=get(KEY),name='Entre-Besos-respaldo'){
+ try{const s=await api('session');if(!s.authenticated||s.user?.role!=='editor')throw Error('Inicia sesión con un socio EB1 para obtener un respaldo.');}catch(e){fail('No se exportó información. '+e.message);return;}
  if(!raw)return;const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download=name+'-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),60000);
 }
 function preserve(){const raw=get(KEY);if(raw&&!get(BACK))set(BACK,raw);}
@@ -133,7 +134,7 @@ async function sendPending(){
   status('Actualizado · versión '+revision);
  }catch(e){if(e.status===409){conflict=true;status('Conflicto: se conservó tu captura local. Pulsa Actualizar para revisarlo.',true);const row=await api('state');keepCloud(row,e.message);}else if(e.status===401){ready=false;login();}else status('Pendiente de enviar · '+e.message,true);}finally{sending=false;}
 }
-async function flush(){if(navigator.locks)return navigator.locks.request('entre-besos-sync',{ifAvailable:true},lock=>lock?sendPending():undefined);return sendPending();}
+async function flush(wait=false){if(navigator.locks)return navigator.locks.request('entre-besos-sync',wait?{}:{ifAvailable:true},lock=>lock?sendPending():undefined);if(wait){const until=Date.now()+20000;while(sending&&Date.now()<until)await new Promise(r=>setTimeout(r,50));}return sendPending();}
 Storage.prototype.getItem=function(k){const raw=nativeGet.call(this,k);if(this===localStorage&&String(k)===KEY&&raw)seenSignature=signature(raw);return raw;};
 Storage.prototype.setItem=function(k,v){
  if(this!==localStorage||String(k)!==KEY)return nativeSet.call(this,k,v);
@@ -159,13 +160,13 @@ window.addEventListener('storage',e=>{if(e.key===META){const m=parse(get(META));
 window.addEventListener('beforeunload',e=>{if(get(OUT)){e.preventDefault();e.returnValue='';}});
 async function reportSnapshot(){
  if(!ready||!who)throw Error('Inicia sesión para generar el reporte.');
- await flush();
+ await flush(true);
  if(get(OUT)||conflict||sending)throw Error('Hay cambios pendientes de guardar. Confirma Actualizado y vuelve a generar el PDF.');
  const row=await api('state');
  if(!row.data)throw Error('Conecta primero la PC con tus datos. No se generará un resumen vacío.');
  return row;
 }
-window.EBShared={user:null,partnerReport:async()=>{if(who?.role==='editor'){await flush();if(get(OUT)||conflict||sending)throw Error('Confirma Actualizado antes de generar el reporte.');}return api('partner-report');},get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
+window.EBShared={user:null,partnerReport:async()=>{if(who?.role==='editor'){await flush(true);if(get(OUT)||conflict||sending)throw Error('Confirma Actualizado antes de generar el reporte.');}return api('partner-report');},get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
 async function boot(){screen('Conectando Entre Besos','Revisando acceso y datos compartidos…');try{const s=await api('session');if(!s.authenticated)return login();who=s.user;csrf=s.csrf;await connect();}catch(e){screen('Conectar Entre Besos',e.message,'<button id="eb-start-retry">Reintentar</button><button id="eb-start-backup" class="secondary">Respaldo local</button>');$('eb-start-retry').onclick=boot;$('eb-start-backup').onclick=()=>backup();}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

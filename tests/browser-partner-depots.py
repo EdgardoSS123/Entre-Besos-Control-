@@ -2,15 +2,17 @@
 import os, shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-BASE=os.environ.get('EB_TEST_URL','http://127.0.0.1:8765/')
+from workspace_test import Workspace
+workspace=Workspace()
+BASE=workspace.base
 OUT=Path(os.environ.get('EB_SCREENSHOTS','/tmp/eb-partner-screens'));OUT.mkdir(parents=True,exist_ok=True)
 DEPOTS=['EB1-1 · Edgardo','EB1-2 · Ricardo','EB1-3 · Mario']
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
  for width,height in [(1440,1000),(390,844)]:
-  ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
+  ctx=workspace.context(browser,viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
   page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-  page.goto(BASE+'?classic=1&test=warehouse-focus1',wait_until='networkidle');page.locator('#lot-id').fill('CI-MINIBODEGAS')
+  workspace.goto(page,BASE+'?classic=1&test=warehouse-focus1',wait_until='networkidle');page.locator('#lot-id').fill('CI-MINIBODEGAS')
   page.locator('#producedLiters').fill('432');page.locator('#liquid').fill('200');page.locator('#open-lot-stock').click()
   row=page.locator('.opening-row').nth(1);row.locator('[data-tag]').select_option('Nacional');row.locator('[data-amount]').fill('20');row.locator('[data-unit]').select_option('box')
   options=row.locator('[data-location] option').all_text_contents()
@@ -46,7 +48,7 @@ with sync_playwright() as p:
   page.screenshot(path=str(OUT/f'minibodegas-{width}.png'),full_page=True)
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Horizontal overflow'
   snapshot=page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")
-  page.reload();page.locator('#lot-id').wait_for();assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")==snapshot
+  workspace.reload(page);page.locator('#lot-id').wait_for();assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1'))")==snapshot
   assert not errors,errors
   print('PASS BROWSER',width,'3 partner depots through selector, opening options, internal transfers, bottle-only sale, independent balances, preservation, no overflow')
   ctx.close()

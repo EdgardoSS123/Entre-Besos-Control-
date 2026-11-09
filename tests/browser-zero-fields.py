@@ -3,7 +3,9 @@ import os
 import shutil
 from playwright.sync_api import sync_playwright, expect
 
-URL = os.environ.get('EB_TEST_URL', 'http://127.0.0.1:8765/')
+from workspace_test import Workspace
+workspace=Workspace()
+URL=workspace.base
 with sync_playwright() as p:
     options = {'headless': True}
     chrome = shutil.which('google-chrome') or shutil.which('chromium')
@@ -12,12 +14,12 @@ with sync_playwright() as p:
     browser = p.chromium.launch(**options)
     for width, height in [(1440, 1000), (390, 844)]:
         mobile = width < 700
-        ctx = browser.new_context(viewport={'width': width, 'height': height},
+        ctx = workspace.context(browser,viewport={'width': width, 'height': height},
                                   is_mobile=mobile, has_touch=mobile)
         page = ctx.new_page()
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
-        page.goto(URL, wait_until='networkidle')
+        workspace.goto(page,URL, wait_until='networkidle')
         if page.locator('#list-new').count(): page.locator('#list-new').click()
         page.locator('#lot-id').wait_for()
         assert page.locator('#zero-on-edit').count() == 1, 'Published zero helper missing'
@@ -66,8 +68,8 @@ with sync_playwright() as p:
         assert lots[0]['components'][0] == 25.5
         assert lots[0]['components'][3] == 0
         assert lots[0]['unitCost'] == 169.5
-        page.reload(wait_until='networkidle')
-        expect(page.locator('h1')).to_have_text('Mis lotes')
+        workspace.reload(page,wait_until='networkidle')
+        expect(page.locator('#app h1')).to_have_text('Mis lotes')
         assert page.evaluate("JSON.parse(localStorage.getItem('eb-v1')).lots[0].unitCost") == 169.5
         if page.locator('#show-lots').count(): page.locator('#show-lots').click()
         if page.locator('[data-edit="ZERO-UI-TEST"]').count():

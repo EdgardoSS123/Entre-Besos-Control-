@@ -15,7 +15,7 @@
   function dateOK(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s;}
   function cents(v,zero=true){
     if(v===null||v===undefined||String(v).trim()===''||!/^\d+(?:\.\d{1,2})?$/.test(String(v).trim()))fail('Captura un importe válido con hasta 2 decimales.');
-    const n=Math.round(Number(v)*100);if(!Number.isSafeInteger(n)||n<0||(!zero&&n===0))fail('El precio de venta debe ser mayor que cero. Para entrega gratuita utiliza Muestra.');return n;
+    const [whole,fraction='']=String(v).trim().split('.'),exact=BigInt(whole)*100n+BigInt((fraction+'00').slice(0,2)),n=Number(exact);if(exact>BigInt(Number.MAX_SAFE_INTEGER)||!Number.isSafeInteger(n)||n<0||(!zero&&n===0))fail('El precio de venta debe ser mayor que cero. Para entrega gratuita utiliza Muestra.');return n;
   }
   function validateDate(date,now){if(!dateOK(date)||date>now)fail('Revisa la fecha; no puede estar en el futuro.');}
   function lastMovement(d,id){return [...base.shipments(d,id).filter(s=>!s.historical&&active(s)).map(s=>s.receivedDate||s.date),...sales(d,id).filter(s=>s.stockEffect).map(s=>s.inventoryAppliedDate||s.date),...actions(d,id).map(x=>x.date)].filter(Boolean).sort().pop();}
@@ -93,7 +93,7 @@
     (next.lotSampleActions=next.lotSampleActions||[]).push({id:input.id,lotId:id,type:input.type,stockType,...sampleDebit,location:input.location,tag:input.tag,quantity:n,date:input.date,notes:notes.slice(0,2000),createdAt:input.stamp,category:'Muestras y promoción',income:0,receivable:0,unitCostMXN,costMXN:unitCostMXN===null?null:Math.round(n*unitCostMXN*100)/100});
     balance(next,id);return next;
   }
-  function quote(n,price,basis){if(!['bottle','box'].includes(basis))fail('El precio debe ser por botella o por caja de 6.');const value=cents(price,false),totalCents=Math.round(n*value/(basis==='box'?6:1));if(!Number.isSafeInteger(totalCents)||totalCents<=0)fail('Revisa el total de la venta.');return{priceCents:value,priceBasis:basis,totalCents};}
+  function quote(n,price,basis){if(!['bottle','box'].includes(basis))fail('El precio debe ser por botella o por caja de 6.');if(!Number.isSafeInteger(n)||n<=0)fail('Revisa la cantidad de botellas.');const value=cents(price,false),divisor=basis==='box'?6n:1n,totalCents=Number((BigInt(n)*BigInt(value)+divisor/2n)/divisor);if(!Number.isSafeInteger(totalCents)||totalCents<=0)fail('Revisa el total de la venta.');return{priceCents:value,priceBasis:basis,totalCents};}
   function status(s,now){if(s.priceKnown===false)return{paidCents:null,pendingCents:null,status:'Precio pendiente',overdue:false};if(s.paymentKnown===false)return{paidCents:null,pendingCents:null,status:'Pago no informado',overdue:false};const paidCents=(s.payments||[]).reduce((n,p)=>n+p.amountCents,0),pendingCents=s.totalCents-paidCents;return{paidCents,pendingCents,status:pendingCents===0?'Pagada':paidCents>0?'Pago parcial':'Pendiente',overdue:pendingCents>0&&!!s.dueDate&&s.dueDate<now};}
   function saveSale(d,id,input,now){
     const l=lot(d,id);unique(d,input.id);validateDate(input.date,now);

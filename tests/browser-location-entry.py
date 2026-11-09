@@ -2,19 +2,21 @@
 import os, shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-BASE=os.environ.get('EB_TEST_URL','http://127.0.0.1:8765/')
+from workspace_test import Workspace
+workspace=Workspace()
+BASE=workspace.base
 OUT=Path(os.environ.get('EB_SCREENSHOTS','/tmp/eb-location-screens')); OUT.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
     browser=p.chromium.launch(executable_path=shutil.which('chromium') or shutil.which('google-chrome'),headless=True,args=['--no-sandbox'])
     for width,height in [(1440,1000),(390,844)]:
-        ctx=browser.new_context(viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
+        ctx=workspace.context(browser,viewport={'width':width,'height':height},is_mobile=width<700,has_touch=width<700)
         page=ctx.new_page(); errors=[]; page.on('pageerror',lambda e: errors.append(str(e)))
-        page.goto(BASE+'?classic=1&'+'?check=location-entry1',wait_until='networkidle')
+        workspace.goto(page,BASE+'?classic=1&'+'?check=location-entry1',wait_until='networkidle')
         page.wait_for_function("document.documentElement.dataset.lotEntryFlow === '1'")
         old={'id':'UNCHANGED-TEST','p':0,'date':'2026-01-01','ml':720,'bottles':12,'unitCost':90,'totalCost':1080}
         seed={'lots':[old],'moves':[],'contacts':[{'name':'Synthetic preservation record'}],'costs':{},'documents':[{'test':'untouched'}]}
         page.evaluate("d=>localStorage.setItem('eb-v1',JSON.stringify(d))",seed)
-        page.reload(); page.locator('#lot-id').wait_for()
+        workspace.reload(page); page.locator('#lot-id').wait_for()
         assert page.locator('#open-lot-stock').is_enabled()
         page.locator('#open-lot-stock').click()
         assert page.locator('#form-errors').is_visible()
@@ -24,7 +26,7 @@ with sync_playwright() as p:
         page.locator('#producedLiters').fill('500'); page.locator('#lossLiters').fill('10')
         page.locator('#liquid').fill('200'); page.locator('#amount-0').fill('20')
         cost=page.evaluate('EBCosts.calc(draft).unit')
-        page.reload(); page.locator('#lot-id').wait_for()
+        workspace.reload(page); page.locator('#lot-id').wait_for()
         assert page.locator('#lot-id').input_value()=='TEST-LOCATION-01'
         assert page.locator('#amount-0').input_value()=='20'
         page.locator('#open-lot-stock').click(); page.locator('#opening-panel').wait_for()

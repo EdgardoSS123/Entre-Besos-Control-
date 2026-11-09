@@ -38,22 +38,26 @@
     catch(e){status(e.name==='AbortError'?'No se compartió el enlace.':'No se pudo abrir Compartir. Usa Copiar para enviar el enlace.',e.name!=='AbortError');}
     finally{shareBusy=false;$('eb-share-action').disabled=false;}
   }
-  function backup(){
-    try{const raw=localStorage.getItem('eb-v1');if(!raw){status('Este acceso todavía no tiene registros. Genera el respaldo desde el navegador donde están tus datos.');return;}
+  async function requireEditor(){
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    try{const r=await fetch('/api/session',{credentials:'same-origin',cache:'no-store',signal:controller.signal});if(!r.ok)throw Error('Conéctate e inicia sesión con un socio EB1.');const s=await r.json();if(!s.authenticated||s.user?.role!=='editor')throw Error('Respaldo e importación requieren una sesión EB1. EB2 solo puede consultar el reporte.');}finally{clearTimeout(timer);}
+  }
+  async function backup(){
+    try{await requireEditor();const raw=localStorage.getItem('eb-v1');if(!raw){status('Este acceso todavía no tiene registros. Genera el respaldo desde el navegador donde están tus datos.');return;}
       const url=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='Entre-Besos-respaldo-'+new Date().toISOString().slice(0,10)+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),120000);status('Respaldo generado. Conserva ese archivo antes de cambiar de acceso.');
     }catch(e){status('No se pudo generar el respaldo. No borres los datos del sitio.',true);}
   }
   async function chooseFile(){
     pending=null;$('eb-restore-preview').hidden=true;
     const file=$('eb-backup-file').files[0];if(!file)return;
-    try{if(file.size>10*1024*1024)throw Error('El archivo supera 10 MB.');if(capturePending())throw Error('Primero guarda o cancela tu captura de materiales.');
+    try{await requireEditor();if(file.size>10*1024*1024)throw Error('El archivo supera 10 MB.');if(capturePending())throw Error('Primero guarda o cancela tu captura de materiales.');
       const B=window.EBDeviceBackup,expected=B.inspect(localStorage);if(expected.occupied)throw Error('Este acceso ya tiene datos o una captura pendiente. No se reemplazará nada.');
       const raw=await file.text(),d=B.parse(raw);pending={raw,expected};
       $('eb-restore-summary').textContent='El archivo contiene '+d.lots.length+' lotes, '+(d.materials||[]).length+' registros de marketing y '+(d.supplies||[]).length+' de insumos. Se recuperará únicamente en este dispositivo.';$('eb-restore-preview').hidden=false;status('Archivo revisado. Confirma la importación para recuperar los datos.');
     }catch(e){status(e.message,true);}
   }
-  function restore(){if(restoreBusy||!pending)return;restoreBusy=true;
-    try{if(capturePending())throw Error('Primero guarda o cancela tu captura.');window.EBDeviceBackup.restore(localStorage,pending.raw,pending.expected);pending=null;location.assign('/');}
+  async function restore(){if(restoreBusy||!pending)return;restoreBusy=true;
+    try{await requireEditor();if(capturePending())throw Error('Primero guarda o cancela tu captura.');window.EBDeviceBackup.restore(localStorage,pending.raw,pending.expected);pending=null;location.assign('/');}
     catch(e){status('No se importó. '+e.message,true);restoreBusy=false;}
   }
   function bind(){
