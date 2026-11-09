@@ -26,6 +26,7 @@ jobs:
         run: |
           python3 .github/scripts/apply-final-audit.py
           if test -f .github/scripts/final-followup.py; then python3 .github/scripts/final-followup.py; fi
+          if test -f .github/scripts/security-closeout.py; then python3 .github/scripts/security-closeout.py; fi
       - name: Verify syntax and all numerical permission and persistence suites
         env:
           EB_REPORT_FIXTURE: /tmp/eb-report-fixture.json
@@ -86,13 +87,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Commit only after every browser group passes
+      - name: Build and commit only after every browser group passes
         run: |
           python3 .github/scripts/apply-final-audit.py
           if test -f .github/scripts/final-followup.py; then python3 .github/scripts/final-followup.py; fi
+          if test -f .github/scripts/security-closeout.py; then python3 .github/scripts/security-closeout.py; fi
+          docker build -t eb-final-audit .
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests state-audit.cjs .maintenance/final-applied.sha
+          git add tests state-audit.cjs .maintenance/final-applied.sha commerce-core.js edit-return.js pwa.js shared.js .github/workflows/verify-published.yml
           if ! git diff --cached --quiet; then
             git commit -m 'Cerrar auditoría con navegador autenticado, permisos y conciliación sin alterar datos'
             git push origin HEAD:work/final-audit-20261109
@@ -109,7 +112,7 @@ jobs:
           import time,urllib.request,urllib.error
           from pathlib import Path
           base='https://entre-besos-web-production.up.railway.app/'
-          files=['shared.js','shared.css','control.js','inventory-core.js','commerce-core.js','simple-core.js','corrections-core.js','orders-core.js','orders-ui.js','reports-pdf.js','reports-data.js','executive-core.js','documents-ui.js','suppliers-ui.js','materials-ui.js','office-ui.js']
+          files=['shared.js','shared.css','control.js','inventory-core.js','commerce-core.js','simple-core.js','corrections-core.js','orders-core.js','orders-ui.js','reports-pdf.js','reports-data.js','executive-core.js','documents-ui.js','suppliers-ui.js','materials-ui.js','office-ui.js','edit-return.js','pwa.js']
           pairs=[(x,x) for x in files]+[('control.html','index.html'),('index.html','legacy.html')]
           for attempt in range(40):
               try:
