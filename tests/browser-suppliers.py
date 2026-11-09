@@ -27,7 +27,7 @@ try:
   pc=browser.new_context(viewport={'width':1440,'height':1000});csrf=login(pc)
   r=pc.request.put(BASE+'api/state',data={'revision':0,'operation':str(uuid.uuid4()),'initialize':True,'data':seed},headers={'Origin':BASE[:-1],'X-EB-CSRF':csrf});assert r.ok,r.text()
   errors=[];page=pc.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
-  page.goto(BASE);ready(page);page.locator('.sidebar [data-office="suppliers"]').click();ready(page);expect(page.locator('h1')).to_have_text('Proveedores')
+  page.goto(BASE);ready(page);page.locator('.sidebar [data-office="suppliers"]').click();expect(page).to_have_url(BASE+'suppliers.html');ready(page);expect(page.locator('#suppliers-app h1')).to_have_text('Proveedores')
   page.locator('#supplier-new').click()
   for f in ['name','phone','email','contact','place']:expect(page.locator('#supplier-'+f)).to_have_value('')
   assert 'Separadores de prueba' in page.locator('#supplier-item').inner_text()
