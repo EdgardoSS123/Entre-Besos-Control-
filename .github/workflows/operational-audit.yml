@@ -1,0 +1,127 @@
+name: Verify operational audit
+on:
+  push:
+    branches: [main, work/operational-audit-20261109]
+    paths: ['.maintenance/audit.part*', '.maintenance/operational-audit.b64', '.github/workflows/operational-audit.yml', 'tests/audit-*', 'tests/browser-audit.py', 'partner-report.cjs', 'state-audit.cjs', 'server.cjs', 'shared.js', 'orders-core.js', 'orders-ui.js']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply hash-verified changes only on isolated branch
+        if: github.ref == 'refs/heads/work/operational-audit-20261109'
+        run: |
+          python3 - <<'PY'
+          import base64,gzip,json,hashlib
+          from pathlib import Path
+          encoded=''.join(Path('.maintenance/audit.part'+str(i)).read_text().strip() for i in range(5))
+          raw=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='812dfb06b4776042354b746607bc2da6cf5e2a04d4c1fea16b1d7a57011d198d'
+          changes=json.loads(raw);paths=[]
+          for c in changes:
+              p=Path(c['path']);assert not p.is_absolute() and '..' not in p.parts
+              old=p.read_text() if p.exists() else ''
+              current=hashlib.sha256(old.encode()).hexdigest() if p.exists() else None
+              if current!=c['after']:
+                  assert current==c['before'],str(p)+' changed since audit baseline'
+                  new=old
+                  for start,end,replacement in reversed(c['ops']):new=new[:start]+replacement+new[end:]
+                  assert hashlib.sha256(new.encode()).hexdigest()==c['after'],str(p)
+                  p.parent.mkdir(parents=True,exist_ok=True);p.write_text(new)
+              paths.append(str(p))
+          Path('.maintenance/operational-audit.b64').write_text(encoded)
+          Path('/tmp/eb-audit-paths.json').write_text(json.dumps(paths))
+          print('PASS hash verification and isolated source integration:',len(paths),'files. No production data accessed.')
+          PY
+      - name: Run all existing and independent numerical and permission tests
+        run: |
+          mkdir -p /tmp/eb-operational-audit
+          set -o pipefail
+          for f in *.js; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done | tee /tmp/eb-operational-audit/unit-results.txt
+          EB_REPORT_FIXTURE=/tmp/eb-report-fixture.json node tests/reports.cjs
+          EB_OFFICE_FIXTURE=/tmp/eb-office-fixture.json node tests/office.cjs
+          EB_ORDERS_FIXTURE=/tmp/eb-orders-fixture.json node tests/orders.cjs
+      - name: Prepare desktop iPhone engine and PDF checks
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0 pymupdf==1.26.5
+          python3 -m playwright install --with-deps webkit
+      - name: Verify three EB1 accounts and report-only EB2 including PDF
+        run: |
+          set -o pipefail
+          python3 tests/browser-audit.py 2>&1 | tee /tmp/eb-operational-audit/browser-audit-results.txt
+      - name: Verify save-return editing and error retention
+        env:
+          EB_WEBKIT: '1'
+          EB_REVIEW: /tmp/eb-operational-audit/save-return
+        run: |
+          set -o pipefail
+          python3 tests/browser-save-return.py 2>&1 | tee /tmp/eb-operational-audit/save-return-results.txt
+      - name: Verify supplier and document edit delete restore and synchronization
+        run: |
+          set -o pipefail
+          python3 tests/browser-suppliers.py 2>&1 | tee /tmp/eb-operational-audit/supplier-results.txt
+          python3 tests/browser-documents.py 2>&1 | tee /tmp/eb-operational-audit/document-results.txt
+      - name: Verify contacts reports orders and two-device recovery
+        run: |
+          set -o pipefail
+          python3 tests/browser-office.py 2>&1 | tee /tmp/eb-operational-audit/office-results.txt
+          python3 tests/browser-orders.py 2>&1 | tee /tmp/eb-operational-audit/order-results.txt
+          python3 tests/browser-orders-customer.py 2>&1 | tee /tmp/eb-operational-audit/recipient-results.txt
+          python3 tests/browser-shared.py 2>&1 | tee /tmp/eb-operational-audit/shared-results.txt
+      - name: Verify production Docker build
+        if: github.ref == 'refs/heads/work/operational-audit-20261109'
+        run: docker build -t eb-operational-audit .
+      - name: Commit only verified changes on the development branch
+        if: github.ref == 'refs/heads/work/operational-audit-20261109'
+        run: |
+          python3 - <<'PY'
+          import subprocess,json
+          from pathlib import Path
+          paths=json.loads(Path('/tmp/eb-audit-paths.json').read_text())
+          subprocess.run(['git','add','--',*paths,'.maintenance/operational-audit.b64'],check=True)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Auditar operaciones: EB2 solo reporte, pedidos eliminables y pruebas independientes'
+            git push origin HEAD:work/operational-audit-20261109
+          fi
+      - name: Verify published source and protected endpoints
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request,urllib.error,time
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(45):
+              try:
+                  for name in ['shared.js','reports-pdf.js','orders-core.js','orders-ui.js']:
+                      assert urllib.request.urlopen(base+name+'?audit='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          for route in ['api/state','api/documents','api/partner-report']:
+              try:urllib.request.urlopen(base+route,timeout=15);raise AssertionError(route+' unexpectedly public')
+              except urllib.error.HTTPError as e:assert e.code==401,(route,e.code)
+          print('PASS exact deployed audit code; unauthenticated state, document and partner report endpoints denied. No real records changed.')
+          PY
+      - name: Package review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-operational-audit
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-operational-audit/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: operational-audit-review
+          path: /tmp/eb-operational-audit
+          retention-days: 3
