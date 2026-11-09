@@ -1,0 +1,77 @@
+name: Verify suppliers directory
+on:
+  push:
+    branches: [main, work/suppliers-directory]
+    paths: ['suppliers*', 'tests/*suppliers*', '.github/scripts/install-suppliers.py', '.github/workflows/suppliers.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate suppliers on isolated branch
+        if: github.ref == 'refs/heads/work/suppliers-directory'
+        run: python3 .github/scripts/install-suppliers.py
+      - name: Verify all calculations and directory invariants
+        run: |
+          for f in *.js; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+      - name: Prepare desktop and WebKit runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+          python3 -m playwright install --with-deps webkit
+      - name: Test shared suppliers on desktop and mobile with synthetic data
+        run: python3 tests/browser-suppliers.py
+      - name: Verify production image
+        if: github.ref == 'refs/heads/work/suppliers-directory'
+        run: docker build -t eb-suppliers-test .
+      - name: Commit only tested integration changes
+        if: github.ref == 'refs/heads/work/suppliers-directory'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add suppliers.html office-nav.js edit-return.js shared.js Dockerfile '*.html'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar Proveedores compartidos por insumo con edición y retorno al listado'
+            git push origin HEAD:work/suppliers-directory
+          fi
+      - name: Verify exact published files and authentication boundary
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          names=['suppliers.html','suppliers-core.js','suppliers-ui.js','suppliers.css','office-nav.js','edit-return.js','shared.js']
+          for attempt in range(40):
+              try:
+                  for name in names:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(4)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('Protected data unexpectedly public')
+          except urllib.error.HTTPError as e:
+              assert e.code==401
+          print('PASS exact deployed supplier directory and authenticated data boundary. No real user data read or changed.')
+          PY
+      - name: Package isolated review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-suppliers-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-suppliers-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suppliers-directory-review
+          path: /tmp/eb-suppliers-review
+          retention-days: 2
