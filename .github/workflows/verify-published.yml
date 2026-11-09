@@ -14,6 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Verify exact published files and original images
         shell: bash
         run: |
@@ -52,18 +56,18 @@ jobs:
         run: |
           python3 -m pip install playwright==1.56.0
           if ! command -v google-chrome && ! command -v chromium; then python3 -m playwright install --with-deps chromium; fi
-      - name: Test published top summary, inventory and recipient dispatch
+      - name: Test authenticated top summary, inventory and recipient dispatch
         env:
           EB_TEST_URL: https://entre-besos-web-production.up.railway.app/
           EB_SCREENSHOTS: /tmp/eb-public-screens
         run: |
-          python3 /tmp/eb-browser-inventory.py
-          python3 /tmp/eb-browser-dispatch.py
-          python3 /tmp/eb-browser-commerce.py
+          python3 tests/browser-inventory.py
+          python3 tests/browser-dispatch.py
+          python3 tests/browser-commerce.py
       - name: Test direct zero-field editing on desktop and touch
         env:
           EB_TEST_URL: https://entre-besos-web-production.up.railway.app/
-        run: python3 /tmp/eb-browser-zero-fields.py
+        run: python3 tests/browser-zero-fields.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
