@@ -52,7 +52,7 @@ async function load(announce=false){
  catch(e){message('No se pudo actualizar: '+e.message,true);}finally{loading=false;$('docs-refresh').disabled=false;}
 }
 function open(doc){
- if(!editor()||$('docs-dialog'))return;dirty=false;uploadId=crypto.randomUUID();
+ if(!editor()||$('docs-dialog'))return;const back=window.EBEditReturn?.capture();dirty=false;uploadId=crypto.randomUUID();
  const dialog=document.createElement('dialog');dialog.id='docs-dialog';dialog.className='docs-dialog';
  let lots=[];try{lots=JSON.parse(localStorage.getItem('eb-v1')).lots.map(l=>l.id);}catch{}if(doc?.lot&&!lots.includes(doc.lot))lots.push(doc.lot);
  const cat=doc?.category||selected||'';
@@ -68,7 +68,7 @@ function open(doc){
    const input={title:$('doc-title').value,category:$('doc-category').value,lot:$('doc-lot').value,expiry:$('doc-expiry').value,notes:$('doc-notes').value};
    if(!doc){const f=$('doc-file').files[0];if(!f)throw Error('Selecciona el archivo.');if(!f.size||f.size>10*1024*1024)throw Error('El archivo debe tener contenido y pesar hasta 10 MB.');input.id=uploadId;input.filename=f.name;input.base64=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onerror=()=>reject(Error('No se pudo leer el archivo.'));fr.onload=()=>resolve(String(fr.result).split(',')[1]);fr.readAsDataURL(f);});}else input.revision=doc.revision;
    await api(doc?'/'+doc.id:'',{method:doc?'PATCH':'POST',body:JSON.stringify(input)});
-   dirty=false;selected=input.category;trash=false;filter='';$('docs-status').value='';dialog.close();await load();message(doc?'Datos actualizados en la base compartida.':'Documento guardado y disponible para los socios en PC y celular.');
+   dirty=false;if(!doc){selected=input.category;trash=false;filter='';$('docs-status').value='';}dialog.close();await load();window.EBEditReturn?.restore(back);message(doc?'Datos actualizados en la base compartida.':'Documento guardado y disponible para los socios en PC y celular.');
   }catch(err){$('docs-form-error').textContent=err.message;}finally{saving=false;if(button.isConnected){button.disabled=false;button.textContent=doc?'Guardar cambios':'Guardar documento';}}
  };
 }

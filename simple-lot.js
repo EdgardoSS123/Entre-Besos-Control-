@@ -144,12 +144,13 @@
     modal.querySelector('[data-apply]').onclick=()=>{try{const [from,tag]=selectedBucket('apply-sale-source');write(d=>I.applySaleStock(d,id,saleId,{from,tag},token,{id:idNew(),stamp:stamp()},today()));modal.close();open(id,'sale',from);toast('Venta descontada una sola vez.');}catch(e){modal.querySelector('[data-error]').textContent=e.message;}};modal.showModal();
   }
   function paymentDialog(id,saleId){
+    const back=window.EBEditReturn?.capture();
     const s=I.sales(data,id).find(s=>s.id===saleId),state=I.saleStatus(s,today()),pid=idNew(),dialog=document.createElement('dialog');dialog.className='eb-modal';
     dialog.innerHTML='<h2>Registrar pago</h2><p>Saldo: '+fmt(state.pendingCents,s.currency)+'</p>'+inp('simple-pay-amount','Importe','','type="text" inputmode="decimal"')+'<div class="wrap-actions"><button class="secondary" data-cancel>Cancelar</button><button class="primary" data-save>Guardar</button></div><p data-error role="alert"></p>';
-    document.body.append(dialog);dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.querySelector('[data-save]').onclick=()=>{try{const amount=$s('simple-pay-amount').value.trim().replace(',','.');write(d=>I.addPayment(d,id,saleId,{id:pid,amount,date:today(),reference:'',stamp:stamp()},today()));dialog.close();open(id,'sale');toast('Pago guardado; no cambia el inventario.');}catch(e){dialog.querySelector('[data-error]').textContent=e.message;}};dialog.showModal();
+    document.body.append(dialog);dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.querySelector('[data-save]').onclick=()=>{try{const amount=$s('simple-pay-amount').value.trim().replace(',','.');write(d=>I.addPayment(d,id,saleId,{id:pid,amount,date:today(),reference:'',stamp:stamp()},today()));window.EBEditReturn.close(dialog);window.EBEditReturn.refresh(back,id);toast('Pago guardado; no cambia el inventario.');}catch(e){dialog.querySelector('[data-error]').textContent=e.message;}};dialog.showModal();
   }
   if(new URLSearchParams(location.search).has('classic'))return;
-  window.EBSimpleUI={open};
+  window.EBSimpleUI={open,context:()=>({id:active,tab:screen,from:preferred})};
   // One entry point per lot; existing data and costing remain untouched.
   const previousDraw=drawLots;drawLots=function(){previousDraw();document.querySelectorAll('.saved-lot').forEach(card=>{const id=card.querySelector('[data-edit]')?.dataset.edit;if(!id)return;const a=card.querySelector('.actions');a.innerHTML='<button class="primary" data-simple-open="'+esc(id)+'">Abrir lote</button><button class="secondary" data-edit="'+esc(id)+'">Editar</button><button class="secondary danger-text" data-delete-lot="'+esc(id)+'">Eliminar</button>';a.querySelector('[data-simple-open]').onclick=()=>open(id);a.querySelector('[data-edit]').onclick=()=>loadLot(id,false);a.querySelector('[data-delete-lot]').onclick=()=>window.EBEditUI.deleteLot(id);});};
   document.documentElement.dataset.simpleLots='1';

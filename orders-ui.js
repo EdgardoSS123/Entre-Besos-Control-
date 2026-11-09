@@ -44,8 +44,9 @@ function drawLines(){
  document.querySelectorAll('[data-remove-line]').forEach(b=>b.onclick=()=>{captureLines();lines.splice(Number(b.dataset.removeLine),1);dirty=true;drawLines();});
  document.querySelectorAll('.order-line input,.order-line select').forEach(el=>el.addEventListener('input',()=>{dirty=true;captureLines();preview();}));preview();
 }
+let orderReturn=null;
 function openForm(id){
- if(!canEdit()||busy)return;const data=read().data,order=id?O.rows(data).find(r=>r.id===id):null;if(id&&!order){say('No se encontró el pedido.',true);return;}
+ if(!canEdit()||busy)return;orderReturn=window.EBEditReturn?.capture();const data=read().data,order=id?O.rows(data).find(r=>r.id===id):null;if(id&&!order){say('No se encontró el pedido.',true);return;}
  editing=order?{id:order.id,expected:JSON.stringify(order)}:null;draftId=order?.id||crypto.randomUUID();dirty=false;
  const available=data.lots,defaultProduct=available[0]?.p??0,lots=available.filter(l=>l.p===defaultProduct);
  lines=order?JSON.parse(JSON.stringify(order.lines)):[{product:defaultProduct,lotId:lots.length===1?lots[0].id:'',amount:'',unit:'box'}];
@@ -69,7 +70,7 @@ async function commit(result,before){
  if(result.unchanged){say('El pedido ya estaba guardado; no se volvió a descontar.');return;}
  if(localStorage.getItem('eb-v1')!==before.raw)throw Error('La información cambió en otra pestaña. Actualiza antes de guardar.');
  localStorage.setItem('eb-v1',JSON.stringify(result.data));dirty=false;window.EBShared?.cancelDraft?.();
- if(dialog)dialog.close();render();
+ const back=dialog?orderReturn:window.EBEditReturn?.capture();if(dialog)dialog.close();render();window.EBEditReturn?.restore(back);
  let message='Pedido guardado. '+(result.order.status==='delivered'?'Existencias descontadas una sola vez.':result.order.status==='pending'?'Entrega pendiente.':'Pedido cancelado; se revirtió su salida, cuando correspondía.');
  if(result.warnings.length)message+=' Hay saldo negativo por cuadrar.';say(message);
  try{const row=await window.EBShared.snapshot(),saved=(row.data.partnerOrders||[]).find(x=>x.id===result.order.id);if(saved&&saved.version>=result.order.version)say(message+' Confirmado en la base compartida.');else say('Guardado local; revisa la sincronización.',true);}catch(e){say('Guardado local. La sincronización sigue pendiente: '+e.message,true);}
@@ -77,7 +78,7 @@ async function commit(result,before){
 function meta(){return{id:draftId,operation:crypto.randomUUID(),stamp:new Date().toISOString(),day:O.today(),actor:window.EBShared.user.username,...(editing?{expected:editing.expected}:{})};}
 async function saveForm(){
  if(busy||!canEdit())return;busy=true;$('order-save').disabled=true;formError('');
- try{if(window.EBShared.pending)throw Error('Termina de sincronizar el cambio anterior antes de guardar otro pedido.');const before=read(),result=O.save(before.data,input(),meta(),I);await commit(result,before);if(result.unchanged&&dialog){dirty=false;dialog.close();render();say('Sin cambios. No se volvió a descontar producto.');}}
+ try{if(window.EBShared.pending)throw Error('Termina de sincronizar el cambio anterior antes de guardar otro pedido.');const before=read(),result=O.save(before.data,input(),meta(),I);await commit(result,before);if(result.unchanged&&dialog){dirty=false;dialog.close();render();window.EBEditReturn?.restore(orderReturn);window.EBShared?.cancelDraft?.();say('Sin cambios. No se volvió a descontar producto.');}}
  catch(e){formError('No se guardó: '+e.message);}finally{busy=false;if($('order-save'))$('order-save').disabled=false;}
 }
 async function transition(id,target){

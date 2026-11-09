@@ -119,9 +119,10 @@ function resumeDraft(){show('editor');$('lot-id')?.focus();}
 function newLot(){
   if(view==='editor'){readDraft();saveDraft();}
   if(hasUnfinishedDraft()&&!confirm('Tienes una captura sin terminar. ¿Reemplazar ese borrador por un lote nuevo? Los lotes guardados no se borran.'))return;
-  draft=blank();loadedRevision=null;dirty=false;saveDraft();renderEditor();window.scrollTo(0,0);$('lot-id').focus();
+  lotEditReturn=null;draft=blank();loadedRevision=null;dirty=false;saveDraft();renderEditor();window.scrollTo(0,0);$('lot-id').focus();
 }
 function freshData(){const raw=localStorage.getItem(KEY);const d=raw?JSON.parse(raw):{lots:[],moves:[],contacts:[],costs:{}};if(!d||!Array.isArray(d.lots)||!Array.isArray(d.moves))throw Error('Formato no reconocido.');return d;}
+let lotEditReturn=null;
 function saveLot(){
   readDraft();const r=calc(draft),p=r.production,errors=[...r.errors];draft.id=String(draft.id||'').trim();
   if(!draft.id)errors.unshift('Escribe el LOTE antes de guardar.');
@@ -138,7 +139,7 @@ function saveLot(){
     if(localStorage.getItem(KEY)!==raw)throw Error('Otra pestaña cambió los datos. Vuelve a abrir el lote.');
     if(rawOriginal&&!localStorage.getItem('eb-before-costos-v3'))localStorage.setItem('eb-before-costos-v3',rawOriginal);
     localStorage.setItem(KEY,JSON.stringify(latest));data=latest;draft.editId=record.id;loadedRevision=JSON.stringify(latest.lots.find(l=>l.id===record.id));draft.sourceRevision=loadedRevision;saveDraft();dirty=false;
-    toast('Lote '+record.id+' guardado · '+number(r.n)+' botellas · '+cash(record.unitCost));renderLots();window.scrollTo(0,0);
+    toast('Lote '+record.id+' guardado · '+number(r.n)+' botellas · '+cash(record.unitCost));if(lotEditReturn){const back=lotEditReturn;lotEditReturn=null;window.EBEditReturn.refresh(back,record.id);}else{renderLots();window.scrollTo(0,0);}window.EBShared?.cancelDraft?.();
   }catch(e){showErrors('No se pudo guardar. '+e.message);}
 }
 
@@ -151,7 +152,7 @@ function fromLot(l,copy){
   else if(Array.isArray(l.components)&&l.components.length===9){const c=l.components;[0,1,3,6,7].forEach((dest,j)=>d.lines[dest].amount=c[[0,1,2,3,5][j]]||0);d.lines[4].amount=(Number(c[6])||0)+(Number(c[7])||0);d.boxSize=c[4]||6;d.legacyExtra=c[8]||0;}
   return d;
 }
-function loadLot(id,copy){const l=data.lots.find(x=>x.id===id);if(!l)return;draft=fromLot(l,copy);loadedRevision=copy?null:JSON.stringify(l);dirty=false;saveDraft();show('editor');if(copy){toast('Se copiaron los costos. Escribe un NUEVO LOTE y ajusta los litros.');$('lot-id').focus();}}
+function loadLot(id,copy){const l=data.lots.find(x=>x.id===id);if(!l)return;lotEditReturn=copy?null:window.EBEditReturn?.capture();draft=fromLot(l,copy);loadedRevision=copy?null:JSON.stringify(l);dirty=false;saveDraft();show('editor');if(copy){toast('Se copiaron los costos. Escribe un NUEVO LOTE y ajusta los litros.');$('lot-id').focus();}}
 function renderLots(){view='lots';try{data=freshData();}catch(e){}$('app').innerHTML='<div class="heading"><div><div class="eyebrow">HISTORIAL DE PRODUCCIÓN</div><h1>Mis lotes</h1><p class="muted">'+data.lots.length+' lotes registrados · costos independientes</p></div><button class="primary" id="list-new">'+icon('plus')+'Nuevo lote</button></div><div class="table-toolbar"><input class="search" id="search-lots" placeholder="Buscar por lote o variedad" aria-label="Buscar lote"><span class="small-note">No se promedian los costos entre lotes.</span></div><div id="saved-list" class="saved-list"></div>';$('list-new').onclick=newLot;$('search-lots').oninput=drawLots;
   if(hasUnfinishedDraft()){
     const resume=document.createElement('section');resume.className='draft-resume';resume.id='draft-resume';

@@ -31,8 +31,9 @@ function drawContacts(){
  document.querySelectorAll('[data-contact-edit]').forEach(b=>b.onclick=()=>{if(discard())openForm(Number(b.dataset.contactEdit));});
  document.querySelectorAll('[data-contact-delete]').forEach(b=>b.onclick=()=>remove(Number(b.dataset.contactDelete)));
 }
+let contactReturn=null;
 function openForm(index){
- if(reader())return;
+ if(reader())return;contactReturn=window.EBEditReturn?.capture();const previousCountry=selected;
  const rows=C.rows(read()),raw=index===undefined?null:rows[index],c=raw?C.view(raw):{country:C.COUNTRIES.includes(selected)?selected:'México',name:'',place:'',email:'',phone:''};
  editing=raw?{index,expected:JSON.stringify(raw)}:null;
  const host=$('contact-editor');host.hidden=false;
@@ -41,7 +42,7 @@ function openForm(index){
  $('contact-cancel').onclick=()=>{if(discard()){host.hidden=true;editing=null;}};
  $('contact-form').onsubmit=e=>{e.preventDefault();try{
   const data=read(),out=C.change(data,{country:$('contact-country').value,name:$('contact-name').value,place:$('contact-place').value,email:$('contact-email').value,phone:$('contact-phone').value},{...(editing||{}),id:crypto.randomUUID(),stamp:new Date().toISOString()});
-  localStorage.setItem('eb-v1',JSON.stringify(out));selected=$('contact-country').value;dirty=false;editing=null;renderContacts();message('Contacto guardado. Revisa «Actualizado» para confirmar la sincronización.');
+  localStorage.setItem('eb-v1',JSON.stringify(out));selected=editing?previousCountry:$('contact-country').value;const back=contactReturn;dirty=false;editing=null;renderContacts();window.EBEditReturn?.restore(back);window.EBShared?.cancelDraft?.();message('Contacto guardado. Revisa «Actualizado» para confirmar la sincronización.');
  }catch(err){$('contact-error').textContent='No se guardó: '+err.message;}};
  host.scrollIntoView({behavior:'smooth',block:'start'});$('contact-name').focus({preventScroll:true});
 }

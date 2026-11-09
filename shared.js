@@ -71,7 +71,8 @@ function accept(row){
 async function startApp(){
  if(loaded){shell.hidden=true;document.documentElement.classList.remove('eb-cloud-loading');return;}
  loaded=true;
- const scripts=[...document.querySelectorAll('script[type="application/x-eb-shared"]')];
+ const viewHelper=document.createElement('script');viewHelper.type='application/x-eb-shared';viewHelper.src='/edit-return.js?v=save-return1';document.head.append(viewHelper);
+ const scripts=[viewHelper,...document.querySelectorAll('script[type="application/x-eb-shared"]:not([src^="/edit-return.js"])')];
  for(const old of [...scripts.filter(x=>x.src),...scripts.filter(x=>!x.src)]){
   await new Promise((resolve,reject)=>{const el=document.createElement('script');if(old.id)el.id=old.id;el.async=false;if(old.src){el.src=old.src;el.onload=resolve;el.onerror=()=>reject(Error('No cargó un módulo. Recarga sin borrar datos.'));}else el.textContent=old.textContent;old.replaceWith(el);if(!el.src)resolve();});
  }

@@ -8,8 +8,23 @@
   const dec='type="text" inputmode="decimal" autocomplete="off"';
   const val=id=>by(id)?.value??'',money=(c,v)=>v==null?'Por confirmar':new Intl.NumberFormat('es-MX',{style:'currency',currency:c}).format(v/100);
   function write(fn){if(storageError)throw Error(storageError);const raw=localStorage.getItem(KEY),latest=freshData(),next=fn(latest);if(localStorage.getItem(KEY)!==raw)throw Error('Otra pestaña cambió los datos. Vuelve a abrir el registro.');localStorage.setItem(KEY,JSON.stringify(next));data=next;return next;}
-  function refresh(id){data=freshData();const found=data.lots.find(x=>x.id===id);if(found&&window.EBSimpleUI){window.EBSimpleUI.open(id);}else show('lots');}
-  function dialog(title,html,save,label='Guardar cambios',danger=false){const d=document.createElement('dialog');d.className='eb-modal correction-modal';d.innerHTML='<h2>'+esc(title)+'</h2>'+html+'<p class="alert hidden" data-error role="alert"></p><div class="correction-footer"><button class="secondary" data-cancel>Cancelar</button><button class="'+(danger?'danger-button':'primary')+'" data-save>'+esc(label)+'</button></div>';document.body.append(d);d.onclose=()=>d.remove();d.querySelector('[data-cancel]').onclick=()=>d.close();d.querySelector('[data-save]').onclick=()=>{try{save(d);d.close();}catch(e){const a=d.querySelector('[data-error]');a.textContent=e.message;a.classList.remove('hidden');a.scrollIntoView({block:'nearest'});}};d.showModal();return d;}
+  let correctionReturn=null,deferredLot=null;
+  function refresh(id){if(correctionReturn){deferredLot=id;return;}data=freshData();const found=data.lots.find(x=>x.id===id);if(found&&window.EBSimpleUI){window.EBSimpleUI.open(id);}else show('lots');}
+  function dialog(title,html,save,label='Guardar cambios',danger=false){
+    const back=window.EBEditReturn?.capture(),d=document.createElement('dialog');let saving=false;
+    d.className='eb-modal correction-modal';d.innerHTML='<h2>'+esc(title)+'</h2>'+html+'<p class="alert hidden" data-error role="alert"></p><div class="correction-footer"><button type="button" class="secondary" data-cancel>Cancelar</button><button type="button" class="'+(danger?'danger-button':'primary')+'" data-save>'+esc(label)+'</button></div>';
+    document.body.append(d);d.onclose=()=>d.remove();d.querySelector('[data-cancel]').onclick=()=>{if(!saving)d.close();};
+    d.querySelector('[data-save]').onclick=async()=>{
+      if(saving)return;saving=true;const button=d.querySelector('[data-save]');button.disabled=true;button.textContent='Guardando…';d.querySelector('[data-error]').classList.add('hidden');
+      correctionReturn=back||{};deferredLot=null;
+      try{
+        await save(d);const id=deferredLot;correctionReturn=null;deferredLot=null;
+        window.EBEditReturn?.close(d);if(d.isConnected){d.close();d.remove();}window.EBShared?.cancelDraft?.();
+        if(id)window.EBEditReturn.refresh(back,id);else window.EBEditReturn?.restore(back);
+      }catch(e){const a=d.querySelector('[data-error]');a.textContent=e.message;a.classList.remove('hidden');a.scrollIntoView({block:'nearest'});}
+      finally{correctionReturn=null;deferredLot=null;saving=false;button.disabled=false;button.textContent=label;}
+    };d.showModal();return d;
+  }
   function stock(id,where,label,remove=false){const d=freshData(),r=I.balance(d,id).rows.find(r=>r.location===where&&r.tag===label)||{quantity:0,sampleQuantity:0},expected=[r.quantity,r.sampleQuantity];
     const html='<p><b>'+esc(where)+'</b> · '+esc(label)+'</p>'+(remove?'<p>La existencia actual quedará en <b>0</b>. No se borra el historial ni se registra una venta. Puedes deshacerlo.</p>':'<div class="fields">'+field('edit-amount','Cantidad actual',r.quantity,dec)+select('edit-unit','Unidad',units,'bottle')+field('edit-samples','Muestras incluidas (botellas)',r.sampleQuantity,dec)+'</div><p class="small-note">Reemplaza lo que tienes en esta ubicación y etiqueta. No suma otra entrada.</p>');
     dialog(remove?'Eliminar existencia':'Editar existencia',html,()=>{write(x=>I.correctStock(x,id,{location:where,tag:label,amount:remove?'0':val('edit-amount'),unit:remove?'bottle':val('edit-unit'),samples:remove?'0':val('edit-samples'),expected,remove},meta(),today()));refresh(id);toast(remove?'Existencia retirada. Puedes deshacerlo.':'Existencia corregida.');},remove?'Eliminar':'Guardar cambios',remove);

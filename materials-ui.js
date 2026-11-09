@@ -48,8 +48,9 @@
     const logs=(Array.isArray(d.materialInventoryHistory)?d.materialInventoryHistory:[]).filter(x=>x.kind===kind).slice(-20).reverse();
     $('material-history').innerHTML=logs.length?'<details class="material-history"><summary>Historial de cambios</summary>'+logs.map(x=>'<p>'+esc(new Date(x.at).toLocaleString('es-MX'))+' · '+({create:'Alta',update:'Edición',delete:'Eliminado'}[x.action]||'Cambio')+' · '+esc((x.after||x.before)?.name||'')+'<br>'+esc((x.after||x.before)?.loc||'')+' · '+esc(x.after?.qty??x.before?.qty??'')+' unidades</p>').join('')+'</details>':'';
   }
+  let materialReturn=null;
   function edit(index) {
-    if(!discard())return;const r=C.records(snapshot.data,kind)[index];if(!r)return;editing={index,expected:JSON.stringify(r)};custom=false;changed=false;$('material-form').reset();
+    if(!discard())return;materialReturn=window.EBEditReturn?.capture();const r=C.records(snapshot.data,kind)[index];if(!r)return;editing={index,expected:JSON.stringify(r)};custom=false;changed=false;$('material-form').reset();
     if($('material-custom-name'))setCustom(false);
     $('material-name').value=r.name;$('material-location').value=r.loc||'';$('material-presentation').value=r.presentation||'';$('material-qty').value=r.qty??'';$('material-cost').value=C.cost(r)??'';
     $('material-form-title').textContent='Editar registro';$('material-save').textContent='Guardar cambios';$('material-cancel').classList.remove('hidden');$('material-error').classList.add('hidden');preview();$('material-form-title').scrollIntoView({block:'start',behavior:'smooth'});$('material-name').focus({preventScroll:true});
@@ -65,7 +66,7 @@
     try {
       const selected=$('material-location').value;if(!locations(read().data).includes(selected))throw Error('Selecciona una bodega válida.');
       persist({name:custom?$('material-custom-name').value:$('material-name').value,custom,loc:selected,presentation:$('material-presentation').value,qty:$('material-qty').value,totalCost:$('material-cost').value,unit:'unidades'},editing||{});
-      editing=null;custom=false;changed=false;render();toast('Inventario guardado. Cantidad y costo total registrados.');
+      const back=editing?materialReturn:null;editing=null;custom=false;changed=false;render();window.EBEditReturn?.restore(back);window.EBShared?.cancelDraft?.();materialReturn=null;toast('Inventario guardado. Cantidad y costo total registrados.');
     } catch(e) {error('No se guardó. '+e.message);} finally{busy=false;if($('material-save'))$('material-save').disabled=false;}
   }
   function remove(index) {
