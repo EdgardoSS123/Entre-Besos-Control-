@@ -1,0 +1,19 @@
+name: Save return source
+on:
+  push:
+    branches: [work/save-return]
+    paths: ['.github/workflows/save-return-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/eb-save-return-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eb-save-return-source
+          path: /tmp/eb-save-return-source.zip
+          retention-days: 2
