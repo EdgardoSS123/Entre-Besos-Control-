@@ -2,7 +2,7 @@ name: Verify operational audit
 on:
   push:
     branches: [main, work/operational-audit-20261109]
-    paths: ['.maintenance/audit.part*', '.maintenance/operational-audit.b64', '.github/workflows/operational-audit.yml', 'tests/audit-*', 'tests/browser-audit.py', 'partner-report.cjs', 'state-audit.cjs', 'server.cjs', 'shared.js', 'orders-core.js', 'orders-ui.js']
+    paths: ['.maintenance/audit.part*', '.maintenance/operational-audit.b64', '.github/workflows/operational-audit.yml', '.github/scripts/audit-followup.py', 'tests/audit-*', 'tests/browser-audit.py', 'partner-report.cjs', 'state-audit.cjs', 'server.cjs', 'shared.js', 'orders-core.js', 'orders-ui.js']
 permissions:
   contents: write
 jobs:
@@ -22,23 +22,27 @@ jobs:
           from pathlib import Path
           encoded=''.join(Path('.maintenance/audit.part'+str(i)).read_text().strip() for i in range(5))
           raw=gzip.decompress(base64.b64decode(encoded,validate=True))
-          assert hashlib.sha256(raw).hexdigest()=='812dfb06b4776042354b746607bc2da6cf5e2a04d4c1fea16b1d7a57011d198d'
-          changes=json.loads(raw);paths=[]
+          sha='812dfb06b4776042354b746607bc2da6cf5e2a04d4c1fea16b1d7a57011d198d'
+          assert hashlib.sha256(raw).hexdigest()==sha
+          changes=json.loads(raw);paths=[];marker=Path('.maintenance/audit-applied.sha')
+          applied=marker.exists() and marker.read_text()==sha
           for c in changes:
               p=Path(c['path']);assert not p.is_absolute() and '..' not in p.parts
-              old=p.read_text() if p.exists() else ''
-              current=hashlib.sha256(old.encode()).hexdigest() if p.exists() else None
-              if current!=c['after']:
-                  assert current==c['before'],str(p)+' changed since audit baseline'
-                  new=old
-                  for start,end,replacement in reversed(c['ops']):new=new[:start]+replacement+new[end:]
-                  assert hashlib.sha256(new.encode()).hexdigest()==c['after'],str(p)
-                  p.parent.mkdir(parents=True,exist_ok=True);p.write_text(new)
+              if not applied:
+                  old=p.read_text() if p.exists() else ''
+                  current=hashlib.sha256(old.encode()).hexdigest() if p.exists() else None
+                  if current!=c['after']:
+                      assert current==c['before'],str(p)+' changed since audit baseline'
+                      new=old
+                      for start,end,replacement in reversed(c['ops']):new=new[:start]+replacement+new[end:]
+                      assert hashlib.sha256(new.encode()).hexdigest()==c['after'],str(p)
+                      p.parent.mkdir(parents=True,exist_ok=True);p.write_text(new)
               paths.append(str(p))
-          Path('.maintenance/operational-audit.b64').write_text(encoded)
+          Path('.maintenance/operational-audit.b64').write_text(encoded);marker.write_text(sha)
           Path('/tmp/eb-audit-paths.json').write_text(json.dumps(paths))
           print('PASS hash verification and isolated source integration:',len(paths),'files. No production data accessed.')
           PY
+          python3 .github/scripts/audit-followup.py
       - name: Run all existing and independent numerical and permission tests
         run: |
           mkdir -p /tmp/eb-operational-audit
@@ -86,7 +90,7 @@ jobs:
           import subprocess,json
           from pathlib import Path
           paths=json.loads(Path('/tmp/eb-audit-paths.json').read_text())
-          subprocess.run(['git','add','--',*paths,'.maintenance/operational-audit.b64'],check=True)
+          subprocess.run(['git','add','--',*paths,'.maintenance/operational-audit.b64','.maintenance/audit-applied.sha'],check=True)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
