@@ -28,7 +28,7 @@ COPY packaging.js device-backup.js pwa.js ./
 COPY tests/device-packaging.cjs ./tests/
 RUN node --check packaging.js && node --check pwa.js && node --check device-backup.js && node tests/device-packaging.cjs
 
-COPY server.cjs shared.js documents-store.cjs ./
+COPY server.cjs shared.js documents-store.cjs partner-report.cjs state-audit.cjs ./
 COPY tests/shared-server.cjs ./tests/
 RUN node --check server.cjs && node --check shared.js && node --experimental-sqlite tests/shared-server.cjs
 
@@ -87,7 +87,7 @@ CMD ["nginx", "-g", "daemon off;"]
 FROM node:22-alpine AS shared
 WORKDIR /app
 COPY --from=static /usr/share/nginx/html/ ./public/
-COPY server.cjs documents-store.cjs ./
+COPY server.cjs documents-store.cjs partner-report.cjs state-audit.cjs ./
 COPY shared.js shared.css ./public/
 ENV PORT=80
 EXPOSE 80

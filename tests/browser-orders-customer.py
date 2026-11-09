@@ -41,7 +41,7 @@ try:
   z.locator('[data-edit-order]').click();z.locator('#order-customer').fill('<img src=x onerror="window.customerXSS=1">');z.locator('#order-save').click();synced(z);expect(z.locator('.order-recipient img')).to_have_count(0);assert not z.evaluate('Boolean(window.customerXSS)')
   for k in ['lots','moves','contacts','materials','supplies','expenses','documents']:assert state(z).get(k)==seed.get(k),k
   assert not z.evaluate("JSON.stringify(window.EBExecutive.build(JSON.parse(localStorage.getItem('eb-v1')),window.EBLedger).sections).includes('customerXSS')")
-  reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'orders.html?partner=edgardo');login(r,'test-reader');synced(r);expect(r.locator('.order-recipient')).to_be_visible();expect(r.locator('[data-edit-order]')).to_have_count(0)
+  reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'orders.html?partner=edgardo');login(r,'test-reader');expect(r.locator('#partner-report-app')).to_be_visible();expect(r.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000);expect(r.locator('.order-recipient')).to_have_count(0);expect(r.locator('[data-edit-order]')).to_have_count(0);assert reader.request.get(BASE+'api/state').status==403
   assert not errors,errors
   print('PASS browser recipient: blank validation, contacts suggestions/free text, save/edit/reload, PC-mobile sync, stock debits unchanged, safe HTML, PDF model excludes recipients, EB2 remains read-only.')
   reader.close();phone.close();pc.close();browser.close()

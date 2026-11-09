@@ -32,7 +32,7 @@ try:
   expect(a.locator('#docs-dialog')).to_have_count(0);expect(a.locator('.docs-file')).to_have_count(1);expect(a.locator('#docs-alerts')).to_contain_text('1 vencido');expect(a.locator('.docs-file')).to_contain_text('Vencido')
   with a.expect_download() as e:a.locator('.docs-file a',has_text='Descargar').click()
   assert Path(e.value.path()).read_bytes()==png
-  a.locator('[data-edit-doc]').click();a.locator('#doc-category').select_option('IMPI');a.locator('#doc-title').fill('Registro de marca · Prueba');a.locator('#doc-expiry').fill('2028-01-01');a.locator('#doc-save').click();expect(a.locator('#docs-dialog')).to_have_count(0);expect(a.locator('.docs-file')).to_contain_text('Vigente');expect(a.locator('#docs-title')).to_have_text('IMPI')
+  a.locator('[data-edit-doc]').click();a.locator('#doc-category').select_option('IMPI');a.locator('#doc-title').fill('Registro de marca · Prueba');a.locator('#doc-expiry').fill('2028-01-01');a.locator('#doc-save').click();expect(a.locator('#docs-dialog')).to_have_count(0);expect(a.locator('#docs-title')).to_have_text('Certificados');expect(a.locator('.docs-file')).to_have_count(0);a.locator('[data-category="IMPI"]').click();expect(a.locator('.docs-file')).to_contain_text('Vigente');expect(a.locator('#docs-title')).to_have_text('IMPI')
   a.locator('[data-category="Certificados"]').click();expect(a.locator('.docs-file')).to_have_count(0);a.locator('#docs-all').click();expect(a.locator('.docs-file')).to_have_count(1)
   a.screenshot(path=str(OUT/'documents-desktop.png'),full_page=True)
   phone=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,accept_downloads=True);b=phone.new_page();b.on('pageerror',lambda e:errors.append(str(e)));b.goto(BASE+'documents.html');login(b);ready(b);expect(b.locator('.docs-file')).to_contain_text('Registro de marca · Prueba')
@@ -41,9 +41,8 @@ try:
   b.locator('#docs-all').click();assert b.evaluate('document.documentElement.scrollWidth <= innerWidth');b.screenshot(path=str(OUT/'documents-mobile.png'),full_page=True)
   b.on('dialog',lambda d:d.accept());b.locator('[data-delete-doc]').first.click();expect(b.locator('.docs-file')).to_have_count(1);b.locator('#docs-trash').click();expect(b.locator('[data-restore]')).to_have_count(1);b.locator('[data-restore]').click();expect(b.locator('[data-restore]')).to_have_count(0);b.locator('#docs-all').click();expect(b.locator('.docs-file')).to_have_count(2)
   b.locator('#docs-search').fill('Registro de marca');expect(b.locator('.docs-file')).to_have_count(1);b.locator('#docs-search').fill('')
-  reader=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True);c=reader.new_page();c.goto(BASE+'documents.html');login(c,'test-reader');ready(c);expect(c.locator('.docs-file')).to_have_count(2);expect(c.locator('#docs-new')).to_have_count(0);expect(c.locator('[data-edit-doc]')).to_have_count(0);expect(c.locator('[data-delete-doc]')).to_have_count(0)
-  with c.expect_download() as e:c.locator('.docs-file a',has_text='Descargar').first.click()
-  assert Path(e.value.path()).read_bytes()==png
+  reader=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True);c=reader.new_page();c.goto(BASE+'documents.html');login(c,'test-reader');expect(c.locator('#partner-report-app')).to_be_visible();expect(c.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000)
+  assert reader.request.get(BASE+'api/documents').status==403;expect(c.locator('.docs-file')).to_have_count(0)
   assert b.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')==seed
   a.goto(BASE);a.wait_for_function("()=>window.EBShared&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')");a.locator('.side-nav [data-office="documents"]').click();ready(a)
   b.goto(BASE);b.wait_for_function("()=>window.EBShared&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')");b.locator('.mobile-nav [data-office="documents"]').click();ready(b)

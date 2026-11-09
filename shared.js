@@ -39,6 +39,7 @@ function keepCloud(row,message){
  $('eb-use-cloud').onclick=async()=>{try{preserve();if(get(OUT))set('eb-conflict-copy-v1',parse(get(OUT)).raw);remove(OUT);conflict=false;accept(row);if(!loaded)await startApp();else location.reload();}catch(e){fail(e.message);}};
 }
 async function connect(){
+ if(who?.role==='reader')return startPartnerReport();
  try{
   const row=await api('state'),local=get(KEY),meta=parse(get(META));revision=row.revision;
   if(!row.data){
@@ -68,6 +69,23 @@ function accept(row){
  set(KEY,raw);set(META,JSON.stringify({revision:row.revision,signature:signature(raw)}));revision=row.revision;ready=true;conflict=false;remoteWaiting=false;
  window.EBShared.user=who;status('Actualizado · versión '+revision);
 }
+async function startPartnerReport(){
+ ready=false;clearInterval(timer);touched=false;who.role='reader';window.EBShared.user=who;
+ // Do not read, export or overwrite a previous EB1 cache on a shared device.
+ document.querySelectorAll('script[type="application/x-eb-shared"]').forEach(s=>s.remove());
+ document.body.replaceChildren();document.documentElement.classList.remove('eb-cloud-loading');
+ document.body.innerHTML='<main class="page" id="partner-report-app" style="max-width:1000px;margin:auto"><header style="display:flex;align-items:center;justify-content:space-between;gap:16px"><img src="/icons/eb-192.png" alt="Entre Besos" width="80" height="80"><button class="secondary" id="partner-logout">Cerrar sesión</button></header><p class="eyebrow">EB2 · SOLO REPORTE PARA SOCIOS</p><h1>Resumen general</h1><p id="partner-report-state" role="status">Consultando reporte…</p><div class="actions"><button class="primary" id="partner-pdf" disabled>Descargar resumen PDF</button><button class="secondary" id="partner-refresh">Actualizar reporte</button></div><div id="partner-report-content"></div></main>';
+ shell=null;history.replaceState(null,'','/office.html?section=summary');
+ const load=src=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=()=>reject(Error('No cargó el generador PDF. Recarga la pantalla.'));document.body.append(s);});
+ async function snapshot(){const row=await api('partner-report');if(!row.model)throw Error('Reporte no disponible.');return row;}
+ window.EBShared.snapshot=snapshot;
+ let reporting=false;
+ async function refresh(){if(reporting)return;reporting=true;$('partner-refresh').disabled=true;try{const row=await snapshot(),m=row.model;$('partner-report-state').textContent='Actualizado · versión '+row.revision;$('partner-report-content').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0">'+m.metrics.map(x=>'<div class="card" style="padding:16px"><small>'+esc(x.label)+'</small><h2>'+esc(x.value)+'</h2><small>'+esc(x.note)+'</small></div>').join('')+'</div>'+m.sections.map(s=>'<section class="card" style="padding:16px;margin:16px 0"><h2>'+esc(s.title)+'</h2><div style="overflow-x:auto"><table style="width:100%;font-size:13px"><thead><tr>'+s.head.map(x=>'<th style="text-align:left;padding:8px">'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+s.body.map(r=>'<tr>'+r.map(x=>'<td style="padding:8px;border-top:1px solid #eee;white-space:pre-line">'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'+(!s.body.length?'<p>'+esc(s.empty||'Sin registros.')+'</p>':'')+(s.note?'<p class="muted">'+esc(s.note)+'</p>':'')+'</section>').join('');$('partner-pdf').disabled=false;}catch(e){$('partner-report-state').textContent=e.message;$('partner-pdf').disabled=true;}finally{reporting=false;$('partner-refresh').disabled=false;}}
+ $('partner-logout').onclick=async()=>{try{await api('logout',{method:'POST',body:'{}'});location.replace('/');}catch(e){$('partner-report-state').textContent=e.message;}};
+ $('partner-refresh').onclick=refresh;
+ try{for(const src of ['/vendor/jspdf.umd.min.js','/vendor/jspdf.plugin.autotable.min.js','/reports-pdf.js?v=audit1'])await load(src);$('partner-pdf').onclick=()=>window.EBReports.download({type:'executive'});await refresh();}catch(e){$('partner-report-state').textContent=e.message;}
+}
+
 async function startApp(){
  if(loaded){shell.hidden=true;document.documentElement.classList.remove('eb-cloud-loading');return;}
  loaded=true;
@@ -147,7 +165,7 @@ async function reportSnapshot(){
  if(!row.data)throw Error('Conecta primero la PC con tus datos. No se generará un resumen vacío.');
  return row;
 }
-window.EBShared={user:null,get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
+window.EBShared={user:null,partnerReport:async()=>{if(who?.role==='editor'){await flush();if(get(OUT)||conflict||sending)throw Error('Confirma Actualizado antes de generar el reporte.');}return api('partner-report');},get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
 async function boot(){screen('Conectando Entre Besos','Revisando acceso y datos compartidos…');try{const s=await api('session');if(!s.authenticated)return login();who=s.user;csrf=s.csrf;await connect();}catch(e){screen('Conectar Entre Besos',e.message,'<button id="eb-start-retry">Reintentar</button><button id="eb-start-backup" class="secondary">Respaldo local</button>');$('eb-start-retry').onclick=boot;$('eb-start-backup').onclick=()=>backup();}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

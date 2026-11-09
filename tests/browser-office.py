@@ -59,7 +59,7 @@ try:
      for line in block['lines']:
       x0,y0,x1,y1=line['bbox'];assert x0>=0 and y0>=0 and x1<=612.5 and y1<=792.5,(i,line['bbox'])
     page.get_pixmap(matrix=pymupdf.Matrix(1.3,1.3)).save(OUT/('pdf-'+name+'-'+str(i+1)+'.png'))
-  reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'office.html?section=contacts');login(r,'test-reader');synced(r);expect(r.locator('#contact-new')).to_have_count(0);expect(r.locator('[data-contact-edit]')).to_have_count(0);r.locator('[data-country="Todos"]').click();expect(r.locator('.office-contact')).to_have_count(3)
+  reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'office.html?section=contacts');login(r,'test-reader');expect(r.locator('#partner-report-app')).to_be_visible();expect(r.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000);expect(r.locator('#contact-new')).to_have_count(0);expect(r.locator('[data-contact-edit]')).to_have_count(0);expect(r.locator('.office-contact')).to_have_count(0);assert reader.request.get(BASE+'api/state').status==403
   a.goto(BASE+'legacy.html');synced(a);a.evaluate("go('Reporte socios')");a.wait_for_url('**/office.html?section=summary');synced(a)
   a.goto(BASE+'materials.html?kind=supplies');synced(a)
   with a.expect_download() as event:a.locator('#eb-report-pdf').click()

@@ -58,10 +58,11 @@ function save(d,input,options,I){
  if(previous){if(previous.request!==requested)fail('Esta referencia ya se utilizó.');return{data:d,unchanged:true,order:before,warnings:[]};}
  if(before&&opts.expected!==JSON.stringify(before))fail('Este pedido cambió en otro dispositivo. Actualiza antes de guardarlo.');
  if(!before&&opts.expected!==undefined)fail('El pedido ya no existe. Actualiza la pantalla.');
- if(before&&['cancelled','deleted'].includes(before.status))fail('Este pedido está cancelado. Crea uno nuevo para volver a solicitar producto.');
- const action=opts.action||'save';if(!['save','cancel','delete'].includes(action))fail('Acción no válida.');
+ if(before?.status==='deleted'&&opts.action!=='restore')fail('Restaura este pedido desde Papelera antes de editarlo.');
+ if(before?.status==='cancelled'&&!['delete','restore'].includes(opts.action))fail('Devuelve el pedido a pendiente antes de editarlo.');
+ const action=opts.action||'save';if(!['save','cancel','delete','restore'].includes(action))fail('Acción no válida.');
  if(action!=='save'&&!before)fail('No se encontró el pedido.');
- const normalized=action==='save'?validate(d,input,I):{...copy(before),status:action==='cancel'?'cancelled':'deleted'};
+ const normalized=action==='save'?validate(d,input,I):{...copy(before),status:action==='restore'?'pending':action==='cancel'?'cancelled':'deleted'};
  if(action==='save'&&!normalized.customer&&(!before||text(before.customer)))fail('Indica para quién es el pedido.');
  if(before&&signature(before)===signature(normalized))return{data:d,order:before,unchanged:true,warnings:[]};
  const next=copy(d),version=(before?.version||0)+1;

@@ -37,9 +37,9 @@ try:
   a.wait_for_function("()=>JSON.parse(localStorage.getItem('eb-v1')).supplies.some(x=>x.name==='Tapones'&&x.qty===600)",timeout=20000)
   assert a.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')==z.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')
   a.reload();wait_synced(a);z.reload();wait_synced(z);assert a.evaluate('localStorage.getItem("eb-v1")')==z.evaluate('localStorage.getItem("eb-v1")')
-  r.goto(BASE);login(r,'test-reader');wait_synced(r);expect(r.locator('#saved-list')).to_contain_text('PRUEBA-PDF')
-  assert r.evaluate("(()=>{try{const d=JSON.parse(localStorage.getItem('eb-v1'));d.lots=[];localStorage.setItem('eb-v1',JSON.stringify(d));return false;}catch{return true;}})()")
-  expect(r.locator('#list-new')).not_to_be_visible()
+  r.goto(BASE);login(r,'test-reader');expect(r.locator('#partner-report-app')).to_be_visible();expect(r.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000)
+  assert reader.request.get(BASE+'api/state').status==403;assert r.evaluate("localStorage.getItem('eb-v1')")==None
+  expect(r.locator('#list-new')).to_have_count(0)
   old=b.new_context();old.add_init_script("if(!localStorage.getItem('eb-v1'))localStorage.setItem('eb-v1',"+json.dumps(json.dumps(seed))+");");o=old.new_page();o.goto(BASE);login(o);expect(o.locator('#eb-use-cloud')).to_be_visible();o.locator('#eb-use-cloud').click();wait_synced(o)
   assert o.evaluate('JSON.parse(localStorage.getItem("eb-before-shared-v1"))')==seed
   phone.set_offline(True);z.locator('[data-edit-material="1"]').click();z.locator('#material-qty').fill('610');z.locator('#material-cost').fill('4880');z.locator('#material-save').click()

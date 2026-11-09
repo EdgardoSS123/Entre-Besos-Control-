@@ -42,7 +42,7 @@ function createDocuments({db,auth,csrf,json,body}){
  function revision(input,row){if(!Number.isSafeInteger(input.revision)||input.revision!==row.revision)throw err(409,'Otra persona modificó este documento. Actualiza la lista antes de guardar.');}
  return async function handle(req,res,url){
   if(url.pathname!=='/api/documents'&&!url.pathname.startsWith('/api/documents/'))return false;
-  const s=auth(req),match=/^\/api\/documents\/([0-9a-f-]{36})(?:\/(file|restore))?$/.exec(url.pathname);
+  const s=auth(req);if(s.user.role!=='editor')throw err(403,'EB2 solo puede consultar el reporte para socios.');const match=/^\/api\/documents\/([0-9a-f-]{36})(?:\/(file|restore))?$/.exec(url.pathname);
   if(url.pathname!=='/api/documents'&&!match)throw err(404,'Documento no encontrado.');
   const id=match?.[1],action=match?.[2];
   if(['GET','HEAD'].includes(req.method)){

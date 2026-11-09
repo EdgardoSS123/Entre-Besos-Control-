@@ -48,7 +48,7 @@ try:
   saved=z.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')
   for k in ['lots','moves','contacts','materials','supplies','expenses','documents']:assert saved.get(k)==seed.get(k),k
   assert not saved.get('lotSales'),'Delivery did not invent a sale';assert not saved.get('lotSampleActions')
-  reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'orders.html?partner=mario');login(r,'test-reader');synced(r);expect(r.locator('#order-new')).to_have_count(0);expect(r.locator('[data-deliver]')).to_have_count(0);expect(r.locator('.order-record')).to_have_count(1)
+  reader=browser.new_context(viewport={'width':390,'height':844});r=reader.new_page();r.goto(BASE+'orders.html?partner=mario');login(r,'test-reader');expect(r.locator('#partner-report-app')).to_be_visible();expect(r.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000);expect(r.locator('#order-new')).to_have_count(0);expect(r.locator('[data-deliver]')).to_have_count(0);expect(r.locator('.order-record')).to_have_count(0)
   # Both client platforms generate the aggregate report with a distinct order-exit section.
   a.goto(BASE+'orders.html?partner=ricardo');synced(a)
   for page,label in [(a,'PC'),(z,'iPhone')]:

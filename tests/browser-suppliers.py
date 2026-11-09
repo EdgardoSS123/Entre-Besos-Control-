@@ -53,9 +53,11 @@ try:
   phone.locator('#supplier-filter').select_option('Empaques de prueba');expect(phone.locator('.supplier-card')).to_have_count(1);phone.locator('#supplier-filter').select_option('Corrugados');expect(phone.locator('.supplier-card')).to_have_count(0);phone.locator('#supplier-filter').select_option('');shot(phone,'supplier-restored-mobile')
   # An unadded Otros value is included at Save; no concept is silently discarded.
   phone.locator('#supplier-new').click();phone.locator('#supplier-name').fill('Proveedor 2');phone.locator('#supplier-item').select_option('__other__');phone.locator('#supplier-other').fill('Concepto nuevo sin agregar');phone.locator('#supplier-save').click();expect(phone.locator('#supplier-dialog')).to_have_count(0);ready(phone);expect(phone.locator('.supplier-card')).to_have_count(2)
-  reader=browser.new_context(viewport={'width':390,'height':844});token=login(reader,'test-reader');rp=reader.new_page();rp.goto(BASE+'suppliers.html');ready(rp);expect(rp.locator('.supplier-card')).to_have_count(2)
+  reader=browser.new_context(viewport={'width':390,'height':844});token=login(reader,'test-reader');rp=reader.new_page();rp.goto(BASE+'suppliers.html');expect(rp.locator('#partner-report-app')).to_be_visible();expect(rp.locator('#partner-report-state')).to_contain_text('Actualizado',timeout=20000)
   for selector in ['#supplier-new','[data-supplier-edit]','[data-supplier-delete]','#supplier-trash']:expect(rp.locator(selector)).to_have_count(0)
-  current=reader.request.get(BASE+'api/state').json();denied=reader.request.put(BASE+'api/state',data={'revision':current['revision'],'operation':str(uuid.uuid4()),'data':current['data']},headers={'Origin':BASE[:-1],'X-EB-CSRF':token});assert denied.status==403
+  assert reader.request.get(BASE+'api/state').status==403
+  denied=reader.request.put(BASE+'api/state',data={'revision':0,'operation':str(uuid.uuid4()),'data':seed},headers={'Origin':BASE[:-1],'X-EB-CSRF':token});assert denied.status==403
+  current=pc.request.get(BASE+'api/state').json()
   for k in seed:assert current['data'][k]==seed[k],k
   assert not errors,errors
   print('PASS SUPPLIERS UI: real isolated PC/WebKit shared store, multi-insumo and Otros, save-close-return, filters, retry safety, invalid/failed saves retain input, reload, delete/restore, EB2 read-only, responsive navigation and unchanged business records.')

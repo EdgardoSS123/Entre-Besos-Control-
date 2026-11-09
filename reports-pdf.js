@@ -21,8 +21,8 @@
     return logoPromise;
   }
   async function generate(ctx){
-    const row=window.EBShared?.snapshot?await window.EBShared.snapshot():{data:snapshot()};
-    const data=row.data,model=ctx.type==='executive'?window.EBExecutive.build(data,window.EBLedger,row):window.EBReportData.build(data,ctx,window.EBLedger);
+    const row=ctx.type==='executive'&&window.EBShared?.partnerReport?await window.EBShared.partnerReport():(window.EBShared?.snapshot?await window.EBShared.snapshot():{data:snapshot()});
+    const data=row.data,model=row.model||(ctx.type==='executive'?window.EBExecutive.build(data,window.EBLedger,row):window.EBReportData.build(data,ctx,window.EBLedger));
     if(!window.jspdf?.jsPDF)throw Error('No se cargó el generador PDF. Recarga esta pantalla.');
     const image=await logo(),{jsPDF}=window.jspdf,doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter',compress:true});
     if(typeof doc.autoTable!=='function')throw Error('No se cargaron las tablas PDF. Recarga esta pantalla.');
