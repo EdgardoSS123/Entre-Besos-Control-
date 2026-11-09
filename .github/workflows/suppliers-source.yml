@@ -1,0 +1,19 @@
+name: Suppliers source
+on:
+  push:
+    branches: [work/suppliers-directory]
+    paths: ['.github/workflows/suppliers-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=zip HEAD -o /tmp/eb-suppliers-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eb-suppliers-source
+          path: /tmp/eb-suppliers-source.zip
+          retention-days: 2
