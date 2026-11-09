@@ -1,0 +1,75 @@
+name: Verify save and return
+on:
+  push:
+    branches: [main, work/save-return]
+    paths: ['edit-return.js', 'tests/browser-save-return.py', '.github/scripts/install-save-return.py', '.github/workflows/save-return.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate view-only changes on development branch
+        if: github.ref == 'refs/heads/work/save-return'
+        run: python3 .github/scripts/install-save-return.py
+      - name: Verify all existing calculations remain valid
+        run: |
+          for f in *.js; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f"; done
+      - name: Prepare browser runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+          python3 -m playwright install --with-deps webkit
+      - name: Test all edit screens and failure retention without real data
+        env:
+          EB_WEBKIT: '1'
+          EB_REVIEW: /tmp/eb-save-return-review
+        run: python3 tests/browser-save-return.py
+      - name: Verify production image
+        if: github.ref == 'refs/heads/work/save-return'
+        run: docker build -t eb-save-return .
+      - name: Commit verified UI integration only
+        if: github.ref == 'refs/heads/work/save-return'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add shared.js control.js simple-lot.js commerce-ui.js corrections-ui.js office-ui.js materials-ui.js orders-ui.js documents-ui.js Dockerfile '*.html'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Cerrar edición al guardar y volver a la misma vista con filtros y posición'
+            git push origin HEAD:work/save-return
+          fi
+      - name: Verify exact deployed code and private data boundary
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          names=['edit-return.js','shared.js','corrections-ui.js','simple-lot.js','control.js','materials-ui.js','office-ui.js','orders-ui.js','documents-ui.js']
+          for attempt in range(40):
+              try:
+                  for name in names:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(5)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('Protected data unexpectedly public')
+          except urllib.error.HTTPError as e:
+              assert e.code==401
+          print('PASS exact deployed return-to-view code. No production records read or modified.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: save-return-review
+          path: /tmp/eb-save-return-review
+          retention-days: 2
