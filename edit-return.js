@@ -26,7 +26,7 @@ function capture(){
  else if(document.getElementById('saved-list'))scope='lots';
  return{host:host.id,path:location.pathname,scope,context,x:scrollX,y:scrollY,
   focus:selector(document.activeElement),
-  filters:filters.map(id=>document.getElementById(id)).filter(el=>el&&host.contains(el)).map(el=>({id,value:el.value})),
+  filters:filters.map(id=>document.getElementById(id)).filter(el=>el&&host.contains(el)).map(el=>({id:el.id,value:el.value})),
   details:details(host).map(({key,open})=>({key,open}))};
 }
 function restore(state){
