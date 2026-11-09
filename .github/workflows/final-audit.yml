@@ -1,0 +1,125 @@
+name: Complete authenticated operational audit
+on:
+  push:
+    branches: [main, work/final-audit-20261109]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: final-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [shared, inventory, edits, interface]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply reviewed changes on isolated branch
+        if: github.ref == 'refs/heads/work/final-audit-20261109'
+        run: |
+          python3 .github/scripts/apply-final-audit.py
+          if test -f .github/scripts/final-followup.py; then python3 .github/scripts/final-followup.py; fi
+      - name: Verify syntax and all numerical permission and persistence suites
+        env:
+          EB_REPORT_FIXTURE: /tmp/eb-report-fixture.json
+          EB_OFFICE_FIXTURE: /tmp/eb-office-fixture.json
+          EB_ORDERS_FIXTURE: /tmp/eb-orders-fixture.json
+          EB_APP_FIXTURE: /tmp/eb-app-fixture.json
+        run: |
+          mkdir -p /tmp/eb-final-review
+          for f in *.js *.cjs; do node --check "$f"; done
+          python3 -m compileall -q tests
+          set -o pipefail
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done | tee /tmp/eb-final-review/unit-results.txt
+      - name: Prepare browser engines and PDF runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0 pymupdf==1.26.5
+          python3 -m playwright install --with-deps webkit
+      - name: Run authenticated browser coverage
+        env:
+          AUDIT_GROUP: ${{ matrix.group }}
+          EB_WEBKIT: '1'
+          EB_SCREENSHOTS: /tmp/eb-final-review/screens
+          EB_REVIEW: /tmp/eb-final-review/save-return
+        run: |
+          python3 - <<'PY'
+          import os,subprocess,time,json
+          from pathlib import Path
+          groups={
+            'shared':['audit','save-return','suppliers','documents','office','orders','orders-customer','shared'],
+            'inventory':['inventory','dispatch','partner-depots','origin-stock','always-samples'],
+            'edits':['commerce','corrections','materials','lot-card-summary','warehouse-focus','history-filter','location-entry'],
+            'interface':['navigation','zero-fields','reports','simple-lot','iphone','contact-import']
+          }
+          results=[];out=Path('/tmp/eb-final-review')
+          for name in groups[os.environ['AUDIT_GROUP']]:
+              start=time.monotonic();log=out/(name+'.log')
+              try:
+                  with log.open('w') as f:r=subprocess.run(['python3','tests/browser-'+name+'.py'],stdout=f,stderr=subprocess.STDOUT,timeout=150)
+                  code=r.returncode
+              except subprocess.TimeoutExpired:code=124
+              result={'test':name,'exit':code,'seconds':round(time.monotonic()-start,1)};results.append(result);print(json.dumps(result),flush=True)
+              print('\n'.join(log.read_text().splitlines()[-32:]),flush=True)
+          (out/'results.json').write_text(json.dumps(results,indent=2))
+          assert all(r['exit']==0 for r in results),json.dumps(results)
+          PY
+      - name: Package exact reviewed source
+        if: always()
+        run: tar --exclude='.git' --exclude='pdf-deps/node_modules' --exclude='__pycache__' -czf /tmp/eb-final-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-audit-${{ matrix.group }}
+          path: /tmp/eb-final-review
+          retention-days: 3
+  commit-verified:
+    needs: verify
+    if: github.ref == 'refs/heads/work/final-audit-20261109'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Commit only after every browser group passes
+        run: |
+          python3 .github/scripts/apply-final-audit.py
+          if test -f .github/scripts/final-followup.py; then python3 .github/scripts/final-followup.py; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests state-audit.cjs .maintenance/final-applied.sha
+          if ! git diff --cached --quiet; then
+            git commit -m 'Cerrar auditoría con navegador autenticado, permisos y conciliación sin alterar datos'
+            git push origin HEAD:work/final-audit-20261109
+          fi
+  published:
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact deployed files and locked endpoints without changing records
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          files=['shared.js','shared.css','control.js','inventory-core.js','commerce-core.js','simple-core.js','corrections-core.js','orders-core.js','orders-ui.js','reports-pdf.js','reports-data.js','executive-core.js','documents-ui.js','suppliers-ui.js','materials-ui.js','office-ui.js']
+          pairs=[(x,x) for x in files]+[('control.html','index.html'),('index.html','legacy.html')]
+          for attempt in range(40):
+              try:
+                  for local,remote in pairs:assert urllib.request.urlopen(base+remote+'?audit='+str(time.time_ns()),timeout=15).read()==Path(local).read_bytes(),remote
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(5)
+          for route in ['api/state','api/documents','api/partner-report']:
+              try:urllib.request.urlopen(base+route,timeout=15);raise AssertionError('Unexpected public access: '+route)
+              except urllib.error.HTTPError as e:assert e.code==401,(route,e.code)
+          print('PASS exact production source, authentication and protected endpoints; no real business records changed')
+          PY
