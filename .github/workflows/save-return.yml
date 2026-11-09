@@ -2,7 +2,7 @@ name: Verify save and return
 on:
   push:
     branches: [main, work/save-return]
-    paths: ['edit-return.js', 'tests/browser-save-return.py', '.github/scripts/install-save-return.py', '.github/workflows/save-return.yml']
+    paths: ['edit-return.js', 'tests/browser-save-return.py', '.github/scripts/install-save-return.py', '.github/workflows/save-return.yml', '.github/scripts/save-return-diagnostics.py']
 permissions:
   contents: write
 jobs:
@@ -30,7 +30,9 @@ jobs:
         env:
           EB_WEBKIT: '1'
           EB_REVIEW: /tmp/eb-save-return-review
-        run: python3 tests/browser-save-return.py
+        run: |
+          python3 .github/scripts/save-return-diagnostics.py
+          python3 tests/browser-save-return.py
       - name: Verify production image
         if: github.ref == 'refs/heads/work/save-return'
         run: docker build -t eb-save-return .
