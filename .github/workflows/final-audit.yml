@@ -25,8 +25,9 @@ jobs:
         if: github.ref == 'refs/heads/work/final-audit-20261109'
         run: |
           python3 .github/scripts/apply-final-audit.py
-          if test -f .github/scripts/final-followup.py; then python3 .github/scripts/final-followup.py; fi
-          if test -f .github/scripts/security-closeout.py; then python3 .github/scripts/security-closeout.py; fi
+          python3 .github/scripts/final-followup.py
+          python3 .github/scripts/security-closeout.py
+          python3 .github/scripts/browser-assertion-closeout.py
       - name: Verify syntax and all numerical permission and persistence suites
         env:
           EB_REPORT_FIXTURE: /tmp/eb-report-fixture.json
@@ -74,7 +75,11 @@ jobs:
           PY
       - name: Package exact reviewed source
         if: always()
-        run: tar --exclude='.git' --exclude='pdf-deps/node_modules' --exclude='__pycache__' -czf /tmp/eb-final-review/tested-source.tgz .
+        run: |
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' --exclude='__pycache__' -czf /tmp/eb-final-review/tested-source.tgz .
+          for folder in /tmp/eb-operational-audit /tmp/eb-report-checks; do
+            if test -d "$folder"; then cp -r "$folder" /tmp/eb-final-review/; fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -90,8 +95,9 @@ jobs:
       - name: Build and commit only after every browser group passes
         run: |
           python3 .github/scripts/apply-final-audit.py
-          if test -f .github/scripts/final-followup.py; then python3 .github/scripts/final-followup.py; fi
-          if test -f .github/scripts/security-closeout.py; then python3 .github/scripts/security-closeout.py; fi
+          python3 .github/scripts/final-followup.py
+          python3 .github/scripts/security-closeout.py
+          python3 .github/scripts/browser-assertion-closeout.py
           docker build -t eb-final-audit .
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
