@@ -19,6 +19,8 @@ def login(ctx,user='test-editor'):
  r=ctx.request.post(BASE+'api/login',data={'username':user,'password':'supplier-test-only'},headers={'Origin':BASE[:-1]});assert r.ok,r.text();return r.json()['csrf']
 def shot(page,name):
  assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),name
+ if page.viewport_size['width']>950:expect(page.locator('.mobile-nav')).to_be_hidden()
+ else:expect(page.locator('.mobile-nav')).to_be_visible()
  if page.locator('#supplier-dialog').count():assert page.locator('#supplier-dialog').evaluate('(el)=>el.scrollWidth<=el.clientWidth+1'),name
  page.screenshot(path=str(OUT/(name+'.png')),full_page=True)
 try:
@@ -56,7 +58,7 @@ try:
   current=reader.request.get(BASE+'api/state').json();denied=reader.request.put(BASE+'api/state',data={'revision':current['revision'],'operation':str(uuid.uuid4()),'data':current['data']},headers={'Origin':BASE[:-1],'X-EB-CSRF':token});assert denied.status==403
   for k in seed:assert current['data'][k]==seed[k],k
   assert not errors,errors
-  print('PASS SUPPLIERS UI: real isolated PC/WebKit shared store, multi-insumo and Otros, save-close-return, filters, retry safety, invalid/failed saves retain input, reload, delete/restore, EB2 read-only and unchanged business records.')
+  print('PASS SUPPLIERS UI: real isolated PC/WebKit shared store, multi-insumo and Otros, save-close-return, filters, retry safety, invalid/failed saves retain input, reload, delete/restore, EB2 read-only, responsive navigation and unchanged business records.')
   pc.close();mobile.close();reader.close();webkit.close();browser.close()
 finally:
  server.terminate();server.wait(timeout=10)
