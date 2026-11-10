@@ -1,0 +1,77 @@
+name: Verify supplier save and return
+on:
+  push:
+    branches: [main, fix/supplier-save-return-20261109]
+    paths: [suppliers-ui.js, suppliers.css, suppliers.html, tests/browser-supplier-save.py, .github/scripts/fix-supplier-save.py, .github/workflows/supplier-save.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare browser runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+          python3 -m playwright install --with-deps webkit
+      - name: Reproduce current save blockers before applying the fix
+        if: github.ref == 'refs/heads/fix/supplier-save-return-20261109'
+        run: |
+          if ! grep -q 'function collectInput()' suppliers-ui.js; then
+            python3 tests/browser-supplier-save.py --baseline
+          fi
+      - name: Apply narrow supplier-only fix
+        if: github.ref == 'refs/heads/fix/supplier-save-return-20261109'
+        run: python3 .github/scripts/fix-supplier-save.py
+      - name: Verify syntax and all existing data invariants
+        run: |
+          node --check suppliers-ui.js
+          for test in tests/*.cjs; do node --experimental-sqlite "$test" || exit; done
+      - name: Exercise old and new supplier flows with disposable data
+        run: |
+          python3 tests/browser-supplier-save.py
+          python3 tests/browser-suppliers.py
+      - name: Commit only verified supplier changes
+        if: github.ref == 'refs/heads/fix/supplier-save-return-20261109'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add suppliers-ui.js suppliers.css suppliers.html
+          if ! git diff --cached --quiet; then
+            git commit -m 'Corregir Guardar proveedor y volver al listado tras confirmar sincronización'
+            git push origin HEAD:fix/supplier-save-return-20261109
+          fi
+      - name: Verify exact deployed supplier assets
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request,urllib.error,time
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(40):
+              try:
+                  for name in ['suppliers.html','suppliers-ui.js','suppliers.css']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(4)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('Unauthenticated workspace access')
+          except urllib.error.HTTPError as e:assert e.code==401
+          print('PASS exact published supplier fix, protected data boundary, and no writes to production business records.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: supplier-save-review
+          path: |
+            /tmp/eb-supplier-save
+            /tmp/eb-suppliers-review
+          retention-days: 3
