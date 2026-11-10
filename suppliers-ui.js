@@ -15,6 +15,11 @@ function setSaving(value){
  const b=$('supplier-save');if(b){b.disabled=value;b.textContent=value?'Guardando…':'Guardar proveedor';}
  for(const id of ['supplier-close','supplier-cancel'])if($(id))$(id).disabled=value;
  $('supplier-form')?.setAttribute('aria-busy',String(value));
+ for(const el of $('supplier-form')?.querySelectorAll('input,select,textarea,button')||[]){
+  if(['supplier-save','supplier-cancel'].includes(el.id))continue;
+  if(value){if(el.dataset.beforeSaveDisabled===undefined)el.dataset.beforeSaveDisabled=el.disabled?'1':'0';el.disabled=true;}
+  else if(el.dataset.beforeSaveDisabled!==undefined){el.disabled=el.dataset.beforeSaveDisabled==='1';delete el.dataset.beforeSaveDisabled;}
+ }
 }
 function collectInput(){
  // Some touch/autofill flows leave a selected value without firing change.
@@ -25,19 +30,10 @@ function collectInput(){
  return {name:$('supplier-name').value,items:[...chosen],contact:$('supplier-contact').value,phone:$('supplier-phone').value,email:$('supplier-email').value.trim(),place:$('supplier-place').value,notes:$('supplier-notes').value};
 }
 async function confirmedRecord(result){
- const limit=Date.now()+20000;
- for(;;){
-  await window.EBShared.flush();
-  try{
-   const row=await window.EBShared.snapshot(),saved=(row.data?.suppliers||[]).find(x=>x.id===result.record.id);
-   if(saved&&saved.version>=result.record.version)return saved;
-   throw Error('No se confirmó el proveedor en la base compartida. Tu captura se conserva.');
-  }catch(e){
-   const waiting=window.EBShared.pending||/pendientes de guardar|Confirma Actualizado/.test(e.message);
-   if(!waiting||Date.now()>=limit)throw e;
-   await new Promise(r=>setTimeout(r,100));
-  }
- }
+ const row=await window.EBShared.snapshot();
+ const saved=(row.data?.suppliers||[]).find(x=>x.id===result.record.id);
+ if(saved&&JSON.stringify(saved)===JSON.stringify(result.record))return saved;
+ throw Error('El proveedor no coincide con la versión confirmada. Tu captura se conserva; revisa si otro socio lo modificó.');
 }
 function render(){
  try{
@@ -99,7 +95,7 @@ async function save(){
   persist(result,before.raw);locallySaved=true;
   // Retrying after a network problem updates this same record, never adds a duplicate.
   editing={id:result.record.id,expected:JSON.stringify(result.record)};
-  await confirmedRecord(result);
+  setSaving(true);await confirmedRecord(result);
   const state=returnView;closeForm(false);render();window.EBEditReturn?.restore(state);
   message(result.unchanged?'Proveedor confirmado. Sin cambios adicionales.':'Proveedor guardado. Confirmado en la base compartida.');
  }catch(e){

@@ -8,13 +8,20 @@ const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,
 const signature=s=>{let n=2166136261;for(let i=0;i<s.length;i++){n^=s.charCodeAt(i);n=Math.imul(n,16777619);}return (n>>>0).toString(16)+':'+s.length;};
 const parse=(raw,fallback=null)=>{try{return JSON.parse(raw||'null')??fallback;}catch{return fallback;}};
 let who=null,csrf='',revision=0,ready=false,loaded=false,sending=false,touched=false,conflict=false,checking=false,remoteWaiting=false;
-let seenSignature=null;
+let seenSignature=null,flushTask=null,lastSyncError=null;
 let shell,timer,reportPass=false,lastStatus='Conectando…';
 const meaningful=d=>d&&Object.values(d).some(v=>Array.isArray(v)&&v.length);
 function checkData(raw){const d=JSON.parse(raw);if(!d||!Array.isArray(d.lots)||!Array.isArray(d.moves))throw Error('No se pudo leer la copia local. No se borró.');return d;}
-async function api(url,options={}){
+async function api(url,options={},retrySession=true){
  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);
- try{const r=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...options,headers:{'Content-Type':'application/json',...(csrf?{'X-EB-CSRF':csrf}:{}),...options.headers},signal:abort.signal});let d;try{d=await r.json();}catch{throw Error('La conexión compartida no respondió. No borres los datos.');}if(!r.ok)throw Object.assign(Error(d.error||'No se pudo sincronizar.'),{status:r.status});return d;}finally{clearTimeout(timer);}
+ try{const r=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...options,headers:{'Content-Type':'application/json',...(csrf?{'X-EB-CSRF':csrf}:{}),...options.headers},signal:abort.signal});let d;try{d=await r.json();}catch{throw Error('La conexión compartida no respondió. No borres los datos.');}if(r.status===403&&d.error==='La sesión debe actualizarse.'&&retrySession&&who?.role==='editor'){
+   // Cookies are shared across tabs; a same-account login renews the CSRF token.
+   // Never retry a mutation under a different user or a read-only account.
+   const current=await api('session',{},false);
+   if(!current.authenticated||current.user?.username!==who.username||current.user?.role!=='editor')throw Object.assign(Error('La cuenta cambió en otra pestaña. Vuelve a entrar con el mismo socio EB1; tu captura local se conserva.'),{status:403});
+   csrf=current.csrf;return api(url,options,false);
+  }
+  if(!r.ok)throw Object.assign(Error(d.error||'No se pudo sincronizar.'),{status:r.status});return d;}finally{clearTimeout(timer);}
 }
 function backup(raw=get(KEY),name='Entre-Besos-respaldo'){
  if(!raw)return;const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download=name+'-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),60000);
@@ -121,7 +128,7 @@ async function poll(force=false){
  }catch(e){if(e.status===401){ready=false;login();}else status('Sin conexión · no se confirma información actualizada',true);}finally{checking=false;}
 }
 async function sendPending(){
- if(sending||conflict||!ready||who.role!=='editor')return;sending=true;
+ if(sending||conflict||!ready||who?.role!=='editor')return;sending=true;lastSyncError=null;
  try{
   let pending=parse(get(OUT));while(pending){
    status('Guardando en la base compartida…');const sent=pending;
@@ -131,9 +138,28 @@ async function sendPending(){
    pending=parse(get(OUT));
   }
   status('Actualizado · versión '+revision);
- }catch(e){if(e.status===409){conflict=true;status('Conflicto: se conservó tu captura local. Pulsa Actualizar para revisarlo.',true);const row=await api('state');keepCloud(row,e.message);}else if(e.status===401){ready=false;login();}else status('Pendiente de enviar · '+e.message,true);}finally{sending=false;}
+ }catch(e){lastSyncError=syncError(e);if(e.status===409){conflict=true;status('Conflicto: se conservó tu captura local. Pulsa Actualizar para revisarlo.',true);const row=await api('state');keepCloud(row,e.message);}else if(e.status===401){ready=false;login();}else status('Pendiente de enviar · '+lastSyncError.message,true);}finally{sending=false;}
 }
-async function flush(){if(navigator.locks)return navigator.locks.request('entre-besos-sync',{ifAvailable:true},lock=>lock?sendPending():undefined);return sendPending();}
+function syncError(e){
+ if(e?.name==='AbortError')return Error('La conexión tardó demasiado. Tu captura se conserva; pulsa Guardar para reintentar.');
+ if(e instanceof TypeError)return Error('No hay conexión con la base compartida. Tu captura se conserva; revisa tu conexión y vuelve a guardar.');
+ return e instanceof Error?e:Error('No se pudo confirmar el guardado. Tu captura se conserva.');
+}
+function flush(){
+ // A confirmation joins the actual send, including a send started by autosave.
+ // Queued Web Locks prevent two tabs sending conflicting snapshots at once.
+ if(flushTask)return flushTask;
+ const controller=new AbortController();let lockEntered=false;
+ const timeout=setTimeout(()=>controller.abort(),30000);
+ flushTask=(async()=>{
+  try{
+   if(navigator.locks)await navigator.locks.request('entre-besos-sync',{signal:controller.signal},async()=>{lockEntered=true;clearTimeout(timeout);await sendPending();});
+   else {clearTimeout(timeout);await sendPending();}
+  }catch(e){lastSyncError=e?.name==='AbortError'&&!lockEntered?Error('Otra pestaña sigue guardando. Tu captura se conserva; termina ese guardado y pulsa Guardar aquí.'):syncError(e);status('Pendiente de enviar · '+lastSyncError.message,true);}
+  finally{clearTimeout(timeout);flushTask=null;}
+ })();
+ return flushTask;
+}
 Storage.prototype.getItem=function(k){const raw=nativeGet.call(this,k);if(this===localStorage&&String(k)===KEY&&raw)seenSignature=signature(raw);return raw;};
 Storage.prototype.setItem=function(k,v){
  if(this!==localStorage||String(k)!==KEY)return nativeSet.call(this,k,v);
@@ -158,11 +184,11 @@ document.addEventListener('click',async e=>{
 window.addEventListener('storage',e=>{if(e.key===META){const m=parse(get(META));if(m)revision=m.revision;}if(e.key===OUT&&!sending)setTimeout(flush,0);});
 window.addEventListener('beforeunload',e=>{if(get(OUT)){e.preventDefault();e.returnValue='';}});
 async function reportSnapshot(){
- if(!ready||!who)throw Error('Inicia sesión para generar el reporte.');
+ if(!ready||!who)throw Error('Inicia sesión para confirmar la información compartida. Tu captura local se conserva.');
  await flush();
- if(get(OUT)||conflict||sending)throw Error('Hay cambios pendientes de guardar. Confirma Actualizado y vuelve a generar el PDF.');
+ if(get(OUT)||conflict||sending)throw lastSyncError||Error('El guardado todavía no está confirmado. Tu captura local se conserva; vuelve a intentar Guardar.');
  const row=await api('state');
- if(!row.data)throw Error('Conecta primero la PC con tus datos. No se generará un resumen vacío.');
+ if(!row.data)throw Error('Conecta primero la PC con tus datos. La base compartida aún no tiene información.');
  return row;
 }
 window.EBShared={user:null,partnerReport:async()=>{if(who?.role==='editor'){await flush();if(get(OUT)||conflict||sending)throw Error('Confirma Actualizado antes de generar el reporte.');}return api('partner-report');},get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
