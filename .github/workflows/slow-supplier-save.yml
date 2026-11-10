@@ -1,0 +1,86 @@
+name: Verify real slow supplier saves
+on:
+  push:
+    branches: [main, fix/supplier-slow-confirmation-20261110]
+    paths: [shared.js, server.cjs, suppliers-ui.js, '*.html', 'tests/browser-slow-supplier-save.py', '.github/scripts/fix-slow-supplier-save.py', '.github/workflows/slow-supplier-save.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare isolated browser runtime
+        if: github.ref != 'refs/heads/main'
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+          python3 -m playwright install --with-deps webkit
+      - name: Reproduce real delay against previous code
+        if: github.ref != 'refs/heads/main'
+        run: |
+          if ! grep -q 'async function storedReceipt' shared.js; then
+            EB_EXPECT_SLOW_BROKEN=1 python3 tests/browser-slow-supplier-save.py
+          fi
+      - name: Apply bounded write and durable receipt fix
+        if: github.ref != 'refs/heads/main'
+        run: python3 .github/scripts/fix-slow-supplier-save.py
+      - name: Verify existing data calculations and permissions
+        run: |
+          node --check shared.js
+          node --check server.cjs
+          node --check suppliers-ui.js
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done
+      - name: Verify measured delays and pending recovery on desktop and WebKit
+        if: github.ref != 'refs/heads/main'
+        run: |
+          mkdir -p /tmp/eb-slow-save
+          set -o pipefail
+          EB_BROWSER=chromium python3 tests/browser-slow-supplier-save.py 2>&1 | tee /tmp/eb-slow-save/chromium.log
+          EB_BROWSER=webkit python3 tests/browser-slow-supplier-save.py 2>&1 | tee /tmp/eb-slow-save/webkit.log
+          EB_BROWSER=chromium python3 tests/browser-supplier-sync.py 2>&1 | tee /tmp/eb-slow-save/previous-sync.log
+          python3 tests/browser-suppliers.py 2>&1 | tee /tmp/eb-slow-save/suppliers.log
+      - name: Commit only tested changes on development branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add shared.js server.cjs tests/browser-supplier-sync.py '*.html'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Confirmar guardados lentos y recuperar acuses sin reenviar ni duplicar proveedores'
+            git push origin HEAD:fix/supplier-slow-confirmation-20261110
+          fi
+      - name: Verify published source and protected receipt endpoint
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(45):
+              try:
+                  for file in ['shared.js','suppliers-ui.js','suppliers.html']:
+                      assert urllib.request.urlopen(base+file+'?check='+str(time.time_ns()),timeout=15).read()==Path(file).read_bytes(),file
+                  for route in ['api/state','api/state/receipt?operation=0123456789abcdef','api/partner-report']:
+                      try:urllib.request.urlopen(base+route,timeout=15);raise AssertionError('Public protected route: '+route)
+                      except urllib.error.HTTPError as e:assert e.code==401,(route,e.code)
+                  print('PASS exact deployed slow-save code and EB1-protected receipt endpoint. No real records created, overwritten or deleted.');break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          PY
+      - name: Package review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-slow-save
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-slow-save/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slow-save-review
+          path: /tmp/eb-slow-save
+          retention-days: 3
