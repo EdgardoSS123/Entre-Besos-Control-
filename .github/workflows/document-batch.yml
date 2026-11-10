@@ -1,0 +1,82 @@
+name: Verify document categories and batch upload
+on:
+  push:
+    branches: [main, work/documents-batch-20261110]
+    paths: ['documents*', 'tests/browser-documents*', '.github/scripts/install-doc-batch.py', '.github/workflows/document-batch.yml']
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate on isolated development branch
+        if: github.ref != 'refs/heads/main'
+        run: python3 .github/scripts/install-doc-batch.py
+      - name: Verify syntax arithmetic permissions and existing document operations
+        run: |
+          mkdir -p /tmp/eb-doc-batch-review
+          node --check documents-batch.js
+          node --check documents-ui.js
+          node --check documents-store.cjs
+          python3 -m py_compile tests/browser-documents-batch.py
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done | tee /tmp/eb-doc-batch-review/unit-results.txt
+      - name: Prepare preinstalled browser runtime
+        if: github.ref != 'refs/heads/main'
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Verify multiple files partial failures retries and existing edit return
+        if: github.ref != 'refs/heads/main'
+        run: |
+          EB_BROWSER=chromium python3 tests/browser-documents-batch.py 2>&1 | tee /tmp/eb-doc-batch-review/chromium.log
+          EB_BROWSER=webkit python3 tests/browser-documents-batch.py 2>&1 | tee /tmp/eb-doc-batch-review/webkit.log
+          python3 tests/browser-documents.py 2>&1 | tee /tmp/eb-doc-batch-review/regression.log
+      - name: Commit only tested integration
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add documents-ui.js documents-store.cjs documents.html Dockerfile tests/browser-documents.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publicar diez categorías y carga múltiple con confirmación individual'
+            git push origin HEAD:work/documents-batch-20261110
+          fi
+      - name: Verify exact production files and locked document storage
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(45):
+              try:
+                  for name in ['documents.html','documents-ui.js','documents-batch.js','documents-batch.css']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  try:urllib.request.urlopen(base+'api/documents',timeout=15);raise AssertionError('Unexpected public documents')
+                  except urllib.error.HTTPError as e:assert e.code==401
+                  print('PASS exact deployed ten-category multi-file UI and private documents endpoint. No production records changed.');break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          PY
+      - name: Package isolated review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-doc-batch-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-doc-batch-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: document-batch-review
+          path: /tmp/eb-doc-batch-review
+          retention-days: 3
