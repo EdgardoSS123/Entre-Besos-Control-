@@ -26,6 +26,8 @@
       model.scope=(ctx.location||'Todas las bodegas')+(ctx.search?' · Búsqueda: '+ctx.search:'');
       model.metrics=[{label:'REGISTROS',value:number(m.rows.length),note:'Conceptos y presentaciones'},{label:'UNIDADES',value:number(m.rows.reduce((s,r)=>s+(valid(r.qty)?Number(r.qty):0),0)),note:'Cantidad capturada'},{label:'COSTO CONOCIDO · MXN',value:money(m.totals.MXN||0).replace(' MXN',''),note:'No incluye costos pendientes'},{label:'SIN COSTO CAPTURADO',value:number(m.missing),note:'No se consideran gratuitos'}];
       model.sections.push(m.section,section('Totales por moneda',['Moneda','Costo total capturado'],Object.entries(m.totals).map(([c,n])=>[c,money(n,c)]),[1]));
+      const mov=array(d,'materialMovements').filter(r=>r.kind===ctx.type&&r.status!=='cancelled'&&(!ctx.location||r.from===ctx.location||r.to===ctx.location)&&(!ctx.search||[r.name,r.presentation].join(' ').toLocaleLowerCase('es').includes(ctx.search.toLocaleLowerCase('es'))));
+      if(mov.length)model.sections.push(section('Movimientos y usos',['Concepto','Fecha','Origen → destino / uso','Cantidad','Estado / motivo'],mov.map(r=>[r.name+(r.presentation?'\n'+r.presentation:''),r.date,r.from+' → '+r.to,number(r.quantity),({transit:'En tránsito',received:'Recibido',used:'Utilizado'}[r.status]||r.status)+'\n'+r.purpose]),[3]));
       model.notes.push('El costo por unidad es el costo total dividido entre la cantidad. Los importes sin capturar no se sustituyen por cero.','Las cantidades de insumos y marketing son independientes de las botellas de mezcal. No se descuentan automáticamente al producir un lote.');
       return model;
     }

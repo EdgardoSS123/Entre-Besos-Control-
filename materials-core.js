@@ -47,6 +47,7 @@
     const editing = index !== undefined && index !== null;
     if (editing && (!Number.isInteger(index) || index < 0 || index >= rows.length || JSON.stringify(rows[index]) !== opts.expected)) throw Error('El registro cambió en otra pestaña. Vuelve a abrirlo antes de guardar.');
     const before = editing ? rows[index] : null;
+    if(opts.remove&&before?.id&&(data.materialMovements||[]).some(m=>m.kind===kind&&m.status!=='cancelled'&&m.effects?.some(e=>e.recordId===before.id)))throw Error('Este insumo tiene movimientos activos. Anúlalos en Movimientos y usos antes de eliminar la ficha; así no se pierde el seguimiento.');
     if (opts.remove && !editing) throw Error('Selecciona el registro que deseas eliminar.');
     const after = opts.remove ? null : {...(before || {}),...validate(input,kind,data),id:before?.id || opts.id,createdAt:before?.createdAt || opts.stamp,updatedAt:opts.stamp};
     const normalize = s => String(s || '').trim().toLocaleLowerCase('es');
