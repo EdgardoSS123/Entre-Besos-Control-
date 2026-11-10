@@ -1,7 +1,7 @@
 'use strict';
 /* Private document files live in the existing persistent SQLite database, never public/ or localStorage. */
 const crypto=require('node:crypto'),path=require('node:path');
-const CATEGORIES=['Certificados','Análisis de laboratorio','Asambleas','Acta constitutiva','IMPI'];
+const CATEGORIES=['Certificados','Análisis de laboratorio','Asambleas','Acta constitutiva','IMPI','COMERCAM','AMMA','FDA','COFEPRIS','Contratos'];
 const FILE_LIMIT=10*1024*1024,STORAGE_LIMIT=500*1024*1024;
 const MIME={'.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp','.heic':'image/heic','.heif':'image/heif','.doc':'application/msword','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.xls':'application/vnd.ms-excel','.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
 const fields='id,title,category,lot,expiry,notes,filename,mime,size,sha256,revision,created,updated,actor,deleted';

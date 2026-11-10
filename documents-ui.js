@@ -1,10 +1,10 @@
 (function(){
 'use strict';
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const categories=['Certificados','Análisis de laboratorio','Asambleas','Acta constitutiva','IMPI'];
-const hints=['Certificados y constancias','Resultados y dictámenes','Actas y acuerdos de socios','Constitución y modificaciones','Marca y propiedad industrial'];
+const categories=['Certificados','Análisis de laboratorio','Asambleas','Acta constitutiva','IMPI','COMERCAM','AMMA','FDA','COFEPRIS','Contratos'];
+const hints=['Certificados y constancias','Resultados y dictámenes','Actas y acuerdos de socios','Constitución y modificaciones','Marca y propiedad industrial','Documentación COMERCAM','Documentación AMMA','Documentación FDA','Documentación COFEPRIS','Contratos y convenios'];
 const icons=['<path d="M8 3h8l4 4v13H4V3h4m8 0v5h4M8 11h8M8 15h5"/><circle cx="16" cy="18" r="3"/>','<path d="M9 3h6m-5 0v7L5 19a1 1 0 0 0 1 2h12a1 1 0 0 0 1-2l-5-9V3M8 15h8"/>','<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m1-16a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 4v3"/>','<path d="M5 3h10l4 4v14H5V3m10 0v5h4M8 12h8M8 16h8"/>','<path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3"/><path d="m8 12 3 3 5-6"/>'];
-const icon=i=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+icons[i]+'</svg>';
+const icon=i=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(icons[i]||icons[0])+'</svg>';
 let docs=[],selected=new URLSearchParams(location.search).get('category')||'',search='',filter='',trash=false,loading=false,dirty=false,saving=false,session=null,uploadId='',stats={};
 if(!categories.includes(selected))selected='';
 const editor=()=>window.EBShared?.user?.role==='editor';
@@ -17,9 +17,9 @@ function message(t,bad=false){$('docs-message').textContent=t;$('docs-message').
 async function api(route='',options={}){
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);
  try{
-  if(options.method){const r=await fetch('/api/session',{credentials:'same-origin',cache:'no-store'});session=await r.json();if(!session.authenticated)throw Error('La sesión venció. Recarga la app para entrar.');}
+  if(options.method){const r=await fetch('/api/session',{credentials:'same-origin',cache:'no-store',signal:controller.signal});session=await r.json();if(!session.authenticated)throw Error('La sesión venció. Recarga la app para entrar.');}
   const r=await fetch('/api/documents'+route,{credentials:'same-origin',cache:'no-store',...options,headers:{'Content-Type':'application/json',...(session?.csrf?{'X-EB-CSRF':session.csrf}:{}),...options.headers},signal:controller.signal});
-  const data=await r.json();if(!r.ok)throw Error(data.error||'No se pudo completar la operación.');return data;
+  const data=await r.json();if(!r.ok)throw Object.assign(Error(data.error||'No se pudo completar la operación.'),{status:r.status});return data;
  }catch(e){if(e.name==='AbortError')throw Error('No se confirmó el guardado. Tu selección permanece; puedes reintentar sin duplicar el archivo.');throw e;}finally{clearTimeout(timeout);}
 }
 function legacy(){try{const d=JSON.parse(localStorage.getItem('eb-v1'));return Array.isArray(d.documents)?d.documents:[];}catch{return[];}}
@@ -52,6 +52,7 @@ async function load(announce=false){
  catch(e){message('No se pudo actualizar: '+e.message,true);}finally{loading=false;$('docs-refresh').disabled=false;}
 }
 function open(doc){
+ if(!doc&&window.EBDocBatch){let lots=[];try{lots=JSON.parse(localStorage.getItem('eb-v1')).lots.map(l=>l.id);}catch{}return window.EBDocBatch.open({categories,selected,lots,editor,api,dirty:v=>{dirty=v;},saving:v=>{saving=v;},saved:async(category,count,back)=>{selected=category;trash=false;filter='';$('docs-status').value='';await load();window.EBEditReturn?.restore(back);message(count+' archivo'+(count===1?' guardado':'s guardados')+' y confirmado'+(count===1?'':'s')+' en la base compartida.');}});}
  if(!editor()||$('docs-dialog'))return;const back=window.EBEditReturn?.capture();dirty=false;uploadId=crypto.randomUUID();
  const dialog=document.createElement('dialog');dialog.id='docs-dialog';dialog.className='docs-dialog';
  let lots=[];try{lots=JSON.parse(localStorage.getItem('eb-v1')).lots.map(l=>l.id);}catch{}if(doc?.lot&&!lots.includes(doc.lot))lots.push(doc.lot);

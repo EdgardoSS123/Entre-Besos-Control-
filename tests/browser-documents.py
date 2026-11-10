@@ -21,7 +21,7 @@ def login(page,user='test-editor'):
  expect(page.locator('#eb-user')).to_be_visible();page.locator('#eb-user').fill(user);page.locator('#eb-password').fill('only-test-password');page.locator('#eb-enter').click()
 def ready(page):
  page.wait_for_function("()=>window.EBShared&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')")
- expect(page.locator('#docs-categories .docs-category')).to_have_count(5)
+ expect(page.locator('#docs-categories .docs-category')).to_have_count(10)
 try:
  with sync_playwright() as p:
   browser=p.chromium.launch(executable_path=shutil.which('google-chrome') or shutil.which('chromium'),args=['--no-sandbox'])
@@ -50,4 +50,4 @@ try:
   for ctx in [desktop,phone,reader]:ctx.close()
   browser.close()
 finally:server.terminate();server.wait(timeout=10)
-print('PASS DOCUMENTS UI: five categories, desktop/mobile real shared backend, upload/download bytes, edits, filtering, expired/30-day alerts, trash/restore, EB2 reader, navigation and all original business data unchanged.')
+print('PASS DOCUMENTS UI: ten categories, desktop/mobile real shared backend, upload/download bytes, edits, filtering, expired/30-day alerts, trash/restore, EB2 reader, navigation and all original business data unchanged.')
