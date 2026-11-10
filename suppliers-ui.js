@@ -6,7 +6,39 @@ let query='',filter='',trash=false,dialog=null,editing=null,dirty=false,busy=fal
 const editor=()=>window.EBShared?.user?.role==='editor';
 function read(){const raw=localStorage.getItem('eb-v1'),data=JSON.parse(raw||'null');if(!data||!Array.isArray(data.lots)||!Array.isArray(data.moves))throw Error('No se pudo leer la base compartida. No se reiniciaron tus datos.');C.rows(data);return{raw,data};}
 function message(m,bad=false){const el=$('supplier-message');if(el){el.textContent=m;el.dataset.error=String(bad);}}
-function formError(m){const el=$('supplier-error');if(el)el.textContent=m;else message(m,true);}
+function formError(m){
+ const el=$('supplier-error');if(!el){message(m,true);return;}
+ el.textContent=m;el.hidden=!m;
+ if(m)requestAnimationFrame(()=>{if(el.isConnected)el.scrollIntoView({block:'nearest',behavior:'instant'});});
+}
+function setSaving(value){
+ const b=$('supplier-save');if(b){b.disabled=value;b.textContent=value?'Guardando…':'Guardar proveedor';}
+ for(const id of ['supplier-close','supplier-cancel'])if($(id))$(id).disabled=value;
+ $('supplier-form')?.setAttribute('aria-busy',String(value));
+}
+function collectInput(){
+ // Some touch/autofill flows leave a selected value without firing change.
+ const select=$('supplier-item'),other=$('supplier-other').value.trim();
+ if(select.value&&select.value!=='__other__')addItem(select.value);
+ if((select.value==='__other__'||!$('supplier-other-wrap').hidden)&&other)addItem(other);
+ // An empty optional Otros field must not reject already selected supplies.
+ return {name:$('supplier-name').value,items:[...chosen],contact:$('supplier-contact').value,phone:$('supplier-phone').value,email:$('supplier-email').value.trim(),place:$('supplier-place').value,notes:$('supplier-notes').value};
+}
+async function confirmedRecord(result){
+ const limit=Date.now()+20000;
+ for(;;){
+  await window.EBShared.flush();
+  try{
+   const row=await window.EBShared.snapshot(),saved=(row.data?.suppliers||[]).find(x=>x.id===result.record.id);
+   if(saved&&saved.version>=result.record.version)return saved;
+   throw Error('No se confirmó el proveedor en la base compartida. Tu captura se conserva.');
+  }catch(e){
+   const waiting=window.EBShared.pending||/pendientes de guardar|Confirma Actualizado/.test(e.message);
+   if(!waiting||Date.now()>=limit)throw e;
+   await new Promise(r=>setTimeout(r,100));
+  }
+ }
+}
 function render(){
  try{
   const d=read().data,names=C.catalog(d),all=C.rows(d),count=all.filter(x=>!x.deletedAt).length;
@@ -30,7 +62,7 @@ function draw(){
  document.querySelectorAll('[data-supplier-restore]').forEach(b=>b.onclick=()=>changeState(b.dataset.supplierRestore,'restore'));
 }
 function closeForm(restore=true){
- if(!dialog)return;const d=dialog,state=returnView;dialog=null;editing=null;dirty=false;returnView=null;window.EBShared?.cancelDraft?.();window.EBEditReturn?.close(d);if(d.isConnected){if(d.open)d.close();d.remove();}if(restore)window.EBEditReturn?.restore(state);
+ if(!dialog)return;const d=dialog,state=returnView;dialog=null;editing=null;dirty=false;returnView=null;window.EBShared?.cancelDraft?.();if(d.contains(document.activeElement))document.activeElement.blur();if(d.open)d.close();d.remove();if(restore)window.EBEditReturn?.restore(state);
 }
 function chosenList(){
  $('supplier-chosen').innerHTML=chosen.length?chosen.map((x,i)=>`<span class="supplier-picked">${esc(x)}<button type="button" data-remove-supply="${i}" aria-label="Quitar ${esc(x)}">×</button></span>`).join(''):'<span class="muted">Selecciona uno o varios insumos.</span>';
@@ -43,7 +75,7 @@ function open(id){
  const v=r?C.view(r):{name:'',items:[],contact:'',place:'',email:'',phone:'',notes:''};
  editing=r?{id:r.id,expected:JSON.stringify(r)}:{id:crypto.randomUUID()};dirty=false;chosen=[...v.items];returnView=window.EBEditReturn?.capture();
  dialog=document.createElement('dialog');dialog.className='supplier-dialog';dialog.id='supplier-dialog';dialog.setAttribute('aria-labelledby','supplier-dialog-title');
- dialog.innerHTML=`<div class="supplier-dialog-head"><div><div class="eyebrow">REGISTRO DE PROVEEDORES</div><h2 id="supplier-dialog-title">${r?'Editar proveedor':'Nuevo proveedor'}</h2></div><button type="button" id="supplier-close" aria-label="Cerrar">×</button></div><form id="supplier-form"><p id="supplier-error" role="alert"></p><div class="supplier-fields"><label class="wide">Proveedor / empresa *<input id="supplier-name" required maxlength="160" autocomplete="organization" value="${esc(v.name)}"></label><div class="wide"><label for="supplier-item">Insumos que ofrece *</label><select id="supplier-item"><option value="">Selecciona un insumo</option>${C.catalog(d).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}<option value="__other__">Otros…</option></select><div id="supplier-other-wrap" class="supplier-other" hidden><label for="supplier-other">Escribe el insumo</label><div><input id="supplier-other" maxlength="160" value=""><button type="button" class="secondary" id="supplier-add-other">Agregar</button></div></div><div id="supplier-chosen" class="supplier-chosen" aria-live="polite"></div></div><label>Persona de contacto<input id="supplier-contact" maxlength="160" autocomplete="name" value="${esc(v.contact)}"></label><label>Teléfono<input id="supplier-phone" type="tel" maxlength="60" autocomplete="tel" value="${esc(v.phone)}"></label><label class="wide">Correo<input id="supplier-email" type="email" maxlength="254" autocomplete="email" value="${esc(v.email)}"></label><label class="wide">Ubicación / dirección<input id="supplier-place" maxlength="240" autocomplete="street-address" value="${esc(v.place)}"></label></div><details class="supplier-notes"><summary>Notas (opcional)</summary><label for="supplier-notes">Presentaciones, condiciones o referencias</label><textarea id="supplier-notes" maxlength="1000" rows="3">${esc(v.notes)}</textarea></details><p class="supplier-help">Registrar un proveedor no cambia tus inventarios ni costos.</p><div class="supplier-form-actions"><button class="secondary" type="button" id="supplier-cancel">Cancelar</button><button class="primary" type="submit" id="supplier-save">Guardar proveedor</button></div></form>`;
+ dialog.innerHTML=`<div class="supplier-dialog-head"><div><div class="eyebrow">REGISTRO DE PROVEEDORES</div><h2 id="supplier-dialog-title">${r?'Editar proveedor':'Nuevo proveedor'}</h2></div><button type="button" id="supplier-close" aria-label="Cerrar">×</button></div><form id="supplier-form" novalidate><div class="supplier-fields"><label class="wide">Proveedor / empresa *<input id="supplier-name" required maxlength="160" autocomplete="organization" value="${esc(v.name)}"></label><div class="wide"><label for="supplier-item">Insumos que ofrece *</label><select id="supplier-item"><option value="">Selecciona un insumo</option>${C.catalog(d).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}<option value="__other__">Otros…</option></select><div id="supplier-other-wrap" class="supplier-other" hidden><label for="supplier-other">Escribe el insumo</label><div><input id="supplier-other" maxlength="160" value=""><button type="button" class="secondary" id="supplier-add-other">Agregar</button></div></div><div id="supplier-chosen" class="supplier-chosen" aria-live="polite"></div></div><label>Persona de contacto<input id="supplier-contact" maxlength="160" autocomplete="name" value="${esc(v.contact)}"></label><label>Teléfono<input id="supplier-phone" type="tel" maxlength="60" autocomplete="tel" value="${esc(v.phone)}"></label><label class="wide">Correo<input id="supplier-email" type="email" maxlength="254" autocomplete="email" value="${esc(v.email)}"></label><label class="wide">Ubicación / dirección<input id="supplier-place" maxlength="240" autocomplete="street-address" value="${esc(v.place)}"></label></div><details class="supplier-notes"><summary>Notas (opcional)</summary><label for="supplier-notes">Presentaciones, condiciones o referencias</label><textarea id="supplier-notes" maxlength="1000" rows="3">${esc(v.notes)}</textarea></details><p class="supplier-help">Registrar un proveedor no cambia tus inventarios ni costos.</p><p id="supplier-error" role="alert" hidden></p><div class="supplier-form-actions"><button class="secondary" type="button" id="supplier-cancel">Cancelar</button><button class="primary" type="submit" id="supplier-save">Guardar proveedor</button></div></form>`;
  document.body.append(dialog);dialog.showModal();chosenList();
  const cancel=()=>{if(busy)return;if(dirty&&!confirm('¿Salir sin guardar los cambios del proveedor?'))return;closeForm();};
  $('supplier-close').onclick=cancel;$('supplier-cancel').onclick=cancel;dialog.addEventListener('cancel',e=>{e.preventDefault();cancel();});
@@ -61,12 +93,18 @@ async function confirmShared(result,label){
  try{const row=await window.EBShared.snapshot(),saved=(row.data.suppliers||[]).find(x=>x.id===result.record.id);if(saved&&saved.version>=result.record.version)message(label+' Confirmado en la base compartida.');else message(label+' Revisa la sincronización.',true);}catch(e){message(label+' Guardado en este dispositivo; pendiente de sincronizar.',true);}
 }
 async function save(){
- if(busy||!editor())return;busy=true;$('supplier-save').disabled=true;formError('');
+ if(busy||!editor())return;busy=true;setSaving(true);formError('');let locallySaved=false;
  try{
-  if(!$('supplier-other-wrap').hidden){addItem($('supplier-other').value);$('supplier-other-wrap').hidden=true;$('supplier-item').value='';}
-  const before=read(),input={name:$('supplier-name').value,items:chosen,contact:$('supplier-contact').value,phone:$('supplier-phone').value,email:$('supplier-email').value,place:$('supplier-place').value,notes:$('supplier-notes').value};
-  const result=C.change(before.data,input,options());persist(result,before.raw);const state=returnView;closeForm(false);render();window.EBEditReturn?.restore(state);message(result.unchanged?'Sin cambios.':'Proveedor guardado.');if(!result.unchanged)await confirmShared(result,'Proveedor guardado.');
- }catch(e){formError('No se guardó: '+e.message);}finally{busy=false;if($('supplier-save'))$('supplier-save').disabled=false;}
+  const input=collectInput(),before=read(),result=C.change(before.data,input,options());
+  persist(result,before.raw);locallySaved=true;
+  // Retrying after a network problem updates this same record, never adds a duplicate.
+  editing={id:result.record.id,expected:JSON.stringify(result.record)};
+  await confirmedRecord(result);
+  const state=returnView;closeForm(false);render();window.EBEditReturn?.restore(state);
+  message(result.unchanged?'Proveedor confirmado. Sin cambios adicionales.':'Proveedor guardado. Confirmado en la base compartida.');
+ }catch(e){
+  formError(locallySaved?'Tu captura está guardada en este dispositivo, pero no se confirmó en la base compartida. No la vuelvas a crear; pulsa Guardar para reintentar. '+e.message:'No se guardó: '+e.message);
+ }finally{busy=false;setSaving(false);}
 }
 async function changeState(id,action){
  if(busy||!editor()||dialog)return;const before=read(),r=C.rows(before.data).find(x=>x.id===id);if(!r)return;
