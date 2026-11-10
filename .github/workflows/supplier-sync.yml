@@ -1,0 +1,85 @@
+name: Verify supplier shared synchronization
+on:
+  push:
+    branches: [main, fix/supplier-shared-sync-20261110]
+    paths: [shared.js, suppliers-ui.js, suppliers.html, '.github/scripts/fix-supplier-sync.py', 'tests/browser-supplier-sync.py', '.github/workflows/supplier-sync.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare isolated desktop and WebKit runtime
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+          python3 -m playwright install --with-deps webkit
+      - name: Reproduce the pending-save screenshot on the previous code
+        if: github.ref == 'refs/heads/fix/supplier-shared-sync-20261110'
+        run: |
+          if ! grep -q 'flushTask=null' shared.js; then
+            EB_EXPECT_BROKEN=1 python3 tests/browser-supplier-sync.py
+          fi
+      - name: Apply narrowly scoped synchronization repair
+        if: github.ref == 'refs/heads/fix/supplier-shared-sync-20261110'
+        run: python3 .github/scripts/fix-supplier-sync.py
+      - name: Verify all existing calculation persistence and permission invariants
+        run: |
+          node --check shared.js
+          node --check suppliers-ui.js
+          for file in tests/*.cjs; do node --experimental-sqlite "$file" || exit; done
+      - name: Verify session renewal delays recovery conflicts and supplier return
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/eb-supplier-sync
+          EB_BROWSER=chromium python3 tests/browser-supplier-sync.py 2>&1 | tee /tmp/eb-supplier-sync/chromium.log
+          EB_BROWSER=webkit python3 tests/browser-supplier-sync.py 2>&1 | tee /tmp/eb-supplier-sync/webkit.log
+          python3 tests/browser-suppliers.py 2>&1 | tee /tmp/eb-supplier-sync/existing-suppliers.log
+      - name: Commit only verified synchronization changes
+        if: github.ref == 'refs/heads/fix/supplier-shared-sync-20261110'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add shared.js suppliers-ui.js '*.html'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Confirmar proveedores en nube y cerrar captura sin duplicados ni bloqueo por sesión renovada'
+            git push origin HEAD:fix/supplier-shared-sync-20261110
+          fi
+      - name: Verify exact deployed files and protected data
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(40):
+              try:
+                  for name in ['shared.js','suppliers-ui.js','suppliers.html']:
+                      assert urllib.request.urlopen(base+name+'?sync-check='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(5)
+          try:
+              urllib.request.urlopen(base+'api/state',timeout=15)
+              raise AssertionError('State unexpectedly public')
+          except urllib.error.HTTPError as e:
+              assert e.code==401
+          print('PASS exact deployed supplier synchronization files; private data remains protected. No production records changed.')
+          PY
+      - name: Package review source and logs
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-supplier-sync
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-supplier-sync/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: supplier-sync-review
+          path: /tmp/eb-supplier-sync
+          retention-days: 3
