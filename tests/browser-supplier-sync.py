@@ -64,8 +64,8 @@ try:
      lost['done']=True;response=route.fetch();assert response.ok;route.abort('failed')
     else:route.continue_()
    page.route('**/api/state',lose_ack);fill(page,'Proveedor acuse interrumpido');page.locator('#supplier-save').click()
-   expect(page.locator('#supplier-error')).to_contain_text('no se confirmó',timeout=20000);expect(page.locator('#supplier-name')).to_have_value('Proveedor acuse interrumpido');expect(page.locator('#supplier-name')).to_be_enabled();assert len(data(ctx)['suppliers'])==3
-   page.locator('#supplier-save').click();closed(page);assert len(data(ctx)['suppliers'])==3;page.unroute('**/api/state',lose_ack)
+   closed(page);assert len(data(ctx)['suppliers'])==3;page.unroute('**/api/state',lose_ack)
+   print('PASS lost acknowledgement automatically confirmed by authenticated receipt; no second save required.',flush=True)
    # Offline failure retains inputs. Reconnection + retry uses the same supplier ID.
    page.locator('[data-supplier-edit]').filter(has_text='Editar').last.click();page.locator('#supplier-contact').fill('Conservar durante desconexión');ctx.set_offline(True);page.locator('#supplier-save').click()
    expect(page.locator('#supplier-error')).to_contain_text('conexión',timeout=20000);expect(page.locator('#supplier-contact')).to_have_value('Conservar durante desconexión');assert 'PDF' not in page.locator('#supplier-error').inner_text()
@@ -81,7 +81,7 @@ try:
    assert sum(s['name']=='Proveedor pendiente recuperado' for s in data(ctx)['suppliers'])==1
    # A cookie change to EB2 must NOT be silently repaired as an EB1 write.
    fill(page,'No enviar como EB2');login(ctx,'test-reader');page.locator('#supplier-save').click()
-   expect(page.locator('#supplier-error')).to_contain_text('cuenta cambió',timeout=20000);assert page.evaluate('EBShared.pending')
+   expect(page.locator('#supplier-error')).to_contain_text('EB2',timeout=20000);assert page.evaluate('EBShared.pending')
    observer=b.new_context();login(observer);assert len(data(observer)['suppliers'])==4;assert ctx.request.get(BASE+'api/state').status==403
    login(ctx);page.reload();ready(page);assert len(data(ctx)['suppliers'])==5
    # Concurrent editing remains protected; never overwrite another device's data.

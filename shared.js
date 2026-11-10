@@ -13,7 +13,9 @@ let shell,timer,reportPass=false,lastStatus='Conectando…';
 const meaningful=d=>d&&Object.values(d).some(v=>Array.isArray(v)&&v.length);
 function checkData(raw){const d=JSON.parse(raw);if(!d||!Array.isArray(d.lots)||!Array.isArray(d.moves))throw Error('No se pudo leer la copia local. No se borró.');return d;}
 async function api(url,options={},retrySession=true){
- const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);
+ // A full workspace upload can exceed 20 seconds on a real connection.
+ const limit=options.method==='PUT'&&url==='state'?65000:20000;
+ const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),limit);
  try{const r=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...options,headers:{'Content-Type':'application/json',...(csrf?{'X-EB-CSRF':csrf}:{}),...options.headers},signal:abort.signal});let d;try{d=await r.json();}catch{throw Error('La conexión compartida no respondió. No borres los datos.');}if(r.status===403&&d.error==='La sesión debe actualizarse.'&&retrySession&&who?.role==='editor'){
    // Cookies are shared across tabs; a same-account login renews the CSRF token.
    // Never retry a mutation under a different user or a read-only account.
@@ -22,6 +24,27 @@ async function api(url,options={},retrySession=true){
    csrf=current.csrf;return api(url,options,false);
   }
   if(!r.ok)throw Object.assign(Error(d.error||'No se pudo sincronizar.'),{status:r.status});return d;}finally{clearTimeout(timer);}
+}
+// Resolve an ambiguous timeout using the durable operation receipt, not a
+// second full upload. Receipts are EB1-only and contain no business records.
+async function storedReceipt(sent){
+ const r=await api('state/receipt?operation='+encodeURIComponent(sent.operation));
+ if(!r.found)return null;
+ const raw=JSON.stringify(checkData(sent.raw));
+ const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+ const hash=Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');
+ if(r.hash!==hash)throw Object.assign(Error('La referencia de este guardado pertenece a una captura diferente. Se conserva tu copia local.'),{status:409});
+ return {ok:true,revision:r.revision,updated:r.updated};
+}
+async function transmitPending(sent){
+ const prior=await storedReceipt(sent);if(prior)return prior;
+ try{return await api('state',{method:'PUT',body:JSON.stringify({revision:sent.revision,operation:sent.operation,data:checkData(sent.raw)})});}
+ catch(e){
+  if(e?.name==='AbortError'||e instanceof TypeError||e.status>=500||e.status===408){
+   try{const receipt=await storedReceipt(sent);if(receipt)return receipt;}catch(receiptError){if(receiptError.status===409)throw receiptError;}
+  }
+  throw e;
+ }
 }
 function backup(raw=get(KEY),name='Entre-Besos-respaldo'){
  if(!raw)return;const u=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download=name+'-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),60000);
@@ -62,7 +85,7 @@ async function connect(){
   const pending=parse(get(OUT));
   if(pending){
    if(who.role!=='editor'){keepCloud(row,'Hay cambios pendientes de un socio con permiso de edición.');return;}
-   try{const ack=await api('state',{method:'PUT',body:JSON.stringify({revision:pending.revision,operation:pending.operation,data:checkData(pending.raw)})});if(parse(get(OUT))?.operation===pending.operation)remove(OUT);set(META,JSON.stringify({revision:ack.revision,signature:signature(pending.raw)}));return connect();}
+   try{const ack=await transmitPending(pending);if(parse(get(OUT))?.operation===pending.operation)remove(OUT);set(META,JSON.stringify({revision:ack.revision,signature:signature(pending.raw)}));return connect();}
    catch(e){if(e.status===409){conflict=true;keepCloud(row,e.message);return;}throw e;}
   }
   if(local&&meaningful(checkData(local))&&(!meta||meta.signature!==signature(local))&&local!==JSON.stringify(row.data)){
@@ -132,7 +155,7 @@ async function sendPending(){
  try{
   let pending=parse(get(OUT));while(pending){
    status('Guardando en la base compartida…');const sent=pending;
-   const ack=await api('state',{method:'PUT',body:JSON.stringify({revision:sent.revision,operation:sent.operation,data:checkData(sent.raw)})});revision=ack.revision;
+   const ack=await transmitPending(sent);revision=ack.revision;
    const next=parse(get(OUT));set(META,JSON.stringify({revision,signature:signature(sent.raw)}));
    if(next?.operation===sent.operation){remove(OUT);}else if(next){next.revision=revision;set(OUT,JSON.stringify(next));}
    pending=parse(get(OUT));
@@ -150,7 +173,7 @@ function flush(){
  // Queued Web Locks prevent two tabs sending conflicting snapshots at once.
  if(flushTask)return flushTask;
  const controller=new AbortController();let lockEntered=false;
- const timeout=setTimeout(()=>controller.abort(),30000);
+ const timeout=setTimeout(()=>controller.abort(),90000);
  flushTask=(async()=>{
   try{
    if(navigator.locks)await navigator.locks.request('entre-besos-sync',{signal:controller.signal},async()=>{lockEntered=true;clearTimeout(timeout);await sendPending();});

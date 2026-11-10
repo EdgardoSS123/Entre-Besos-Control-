@@ -50,6 +50,13 @@ function createApp(options={}){
   }
   if(route==='/api/logout'&&req.method==='POST'){const s=auth(req);csrf(req,s);db.prepare('DELETE FROM sessions WHERE token=?').run(s.token);return json(res,200,{ok:true},{'Set-Cookie':`${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure?'; Secure':''}`});}
   if(route==='/api/partner-report'&&req.method==='GET'){auth(req);const row=getState();if(!row.payload)throw error(409,'Falta conectar la base compartida.');const data=JSON.parse(row.payload);data.documents=db.prepare('SELECT expiry FROM document_files WHERE deleted=0').all();const model=require('./partner-report.cjs').buildPartnerReport(data,root,{revision:row.revision,updated:row.updated});return json(res,200,{revision:row.revision,updated:row.updated,model});}
+  if(route==='/api/state/receipt'&&req.method==='GET'){
+   const s=auth(req);if(s.user.role!=='editor')throw error(403,'EB2 solo puede consultar el reporte para socios.');
+   const operation=url.searchParams.get('operation')||'';
+   if(!/^[a-zA-Z0-9_-]{16,100}$/.test(operation))throw error(400,'Referencia de guardado no válida.');
+   const r=db.prepare('SELECT revision,hash,updated FROM revisions WHERE operation=?').get(operation);
+   return json(res,200,r?{found:true,...r}:{found:false});
+  }
   if(route==='/api/state'&&req.method==='GET'){const s=auth(req);if(s.user.role!=='editor')throw error(403,'EB2 solo puede consultar el reporte para socios.');const row=getState();if(url.searchParams.get('since')===String(row.revision))return json(res,200,{unchanged:true,revision:row.revision});return json(res,200,{revision:row.revision,data:row.payload?JSON.parse(row.payload):null,updated:row.updated,actor:row.actor});}
   if(route==='/api/state'&&req.method==='PUT'){
    const s=auth(req);csrf(req,s);if(s.user.role!=='editor')throw error(403,'EB2 tiene acceso solo de consulta.');
@@ -80,7 +87,7 @@ function createApp(options={}){
   res.writeHead(200,{'Content-Type':types[ext],'Content-Length':stat.size,'Cache-Control':ext==='.html'?'no-store':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY'});if(req.method==='HEAD')res.end();else fs.createReadStream(target).pipe(res);
  }catch(e){if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'No se pudo completar la operación. Tus registros anteriores se conservan.'});else res.end();}};
  if(process.env.RAILWAY_ENVIRONMENT_ID){try{const row=getState();console.log('EB_OPERATIONAL_AUDIT '+JSON.stringify({version:'audit-2026-11-09',accounts:users.map(u=>({username:u.username,role:u.role})),sqlite:db.prepare('PRAGMA quick_check').get(),revision:row.revision,...(row.payload?require('./state-audit.cjs').inspect(JSON.parse(row.payload),root):{uninitialized:true})}));}catch(e){console.log('EB_OPERATIONAL_AUDIT '+JSON.stringify({error:e.message}));}}
- const server=http.createServer(handler);server.requestTimeout=30000;server.headersTimeout=15000;
+ const server=http.createServer(handler);server.requestTimeout=90000;server.headersTimeout=15000;
  return {server,db,close:()=>{server.close();db.close();}};
 }
 module.exports={createApp,parseState};

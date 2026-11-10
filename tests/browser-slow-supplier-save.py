@@ -25,7 +25,7 @@ app.server.listen(0,'127.0.0.1',()=>{
   const delay=put?mode.delay:0,drop=put&&mode.drop;if(drop)mode.drop=false;
   setTimeout(()=>{
    const upstream=http.request({host:'127.0.0.1',port:app.server.address().port,path:req.url,method:req.method,headers:req.headers},reply=>{
-    if(drop){reply.resume();reply.on('end',()=>res.destroy());return;}
+    if(drop){reply.resume();reply.on('end',()=>{res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:'Synthetic gateway lost the commit acknowledgement'}));});return;}
     if(res.destroyed){reply.resume();return;}
     res.writeHead(reply.statusCode,reply.headers);reply.pipe(res);
    });upstream.on('error',()=>{if(!res.destroyed){res.writeHead(502);res.end();}});upstream.end(bytes);
