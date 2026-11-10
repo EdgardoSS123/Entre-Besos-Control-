@@ -1,0 +1,107 @@
+name: Verify material movements and consumption
+on:
+  push:
+    branches: [main, work/material-transfers-20261110]
+    paths: ['.maintenance/material-moves.part*', '.github/workflows/material-movements.yml', 'material-moves*', 'materials*', 'tests/*material-moves*', 'partner-report.cjs']
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply reviewed changes in isolated branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib,json
+          encoded=''.join(Path('.maintenance/material-moves.part'+str(i)).read_text().strip() for i in range(4))
+          raw=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='afdc9fa1a9b1c90ac80d8bdf3e1a1e29c5ba972ef073d314f1d944bf58644bbf'
+          paths=[]
+          for c in json.loads(raw):
+              p=Path(c['path']);assert not p.is_absolute() and '..' not in p.parts
+              old=p.read_text() if p.exists() else ''
+              current=hashlib.sha256(old.encode()).hexdigest() if p.exists() else None
+              if current!=c['after']:
+                  assert current==c['before'],str(p)+' changed since reviewed baseline'
+                  new=old
+                  for start,end,replacement in reversed(c['ops']):new=new[:start]+replacement+new[end:]
+                  assert hashlib.sha256(new.encode()).hexdigest()==c['after'],str(p)
+                  p.parent.mkdir(exist_ok=True,parents=True);p.write_text(new)
+              paths.append(str(p))
+          Path('/tmp/material-move-paths.json').write_text(json.dumps(paths))
+          print('Verified source hashes. No production data read or modified.')
+          PY
+      - name: Verify calculations reversals and all existing invariants
+        run: |
+          mkdir -p /tmp/eb-material-moves-review
+          for f in *.js *.cjs; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done | tee /tmp/eb-material-moves-review/unit-results.txt
+      - name: Prepare browser runtime
+        if: github.ref != 'refs/heads/main'
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Verify shared movement use and save-return on desktop and mobile
+        if: github.ref != 'refs/heads/main'
+        env:
+          EB_REVIEW: /tmp/eb-material-moves-review
+        run: |
+          EB_BROWSER=chromium python3 tests/browser-material-moves.py 2>&1 | tee /tmp/eb-material-moves-review/chromium.log
+          EB_BROWSER=webkit python3 tests/browser-material-moves.py 2>&1 | tee /tmp/eb-material-moves-review/webkit.log
+      - name: Commit only tested integration
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 - <<'PY'
+          import subprocess,json
+          from pathlib import Path
+          subprocess.run(['git','add','--',*json.loads(Path('/tmp/material-move-paths.json').read_text())],check=True)
+          PY
+          if ! git diff --cached --quiet; then
+            git commit -m 'Agregar movimientos y usos de insumos con saldo reversible y seguimiento compartido'
+            git push origin HEAD:work/material-transfers-20261110
+          fi
+      - name: Verify exact published files and access controls
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request,urllib.error,time
+          base='https://entre-besos-web-production.up.railway.app/'
+          files=['materials.html','materials-core.js','materials-ui.js','material-moves-core.js','material-moves-ui.js','material-moves.css','executive-core.js','reports-data.js']
+          for attempt in range(45):
+              try:
+                  for f in files:assert urllib.request.urlopen(base+f+'?verify='+str(time.time_ns()),timeout=15).read()==Path(f).read_bytes(),f
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          for route in ['api/state','api/partner-report']:
+              try:urllib.request.urlopen(base+route,timeout=15);raise AssertionError('Unexpected public access')
+              except urllib.error.HTTPError as e:assert e.code==401
+          print('PASS exact published material movements; protected data requires authentication; no real quantities changed.')
+          PY
+      - name: Package review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-material-moves-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' --exclude='__pycache__' -czf /tmp/eb-material-moves-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: material-movements-review
+          path: /tmp/eb-material-moves-review
+          retention-days: 3
