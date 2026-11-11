@@ -1,0 +1,87 @@
+name: Verify partner totals and warehouse coverage
+on:
+  push:
+    branches: [main, work/order-coverage-20261111]
+    paths: ['orders-coverage.*', 'orders-ui.js', 'orders.html', 'tests/*orders-coverage*', '.github/scripts/install-orders-coverage.py', '.github/workflows/orders-coverage.yml']
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Integrate only on isolated branch
+        if: github.ref != 'refs/heads/main'
+        run: python3 .github/scripts/install-orders-coverage.py
+      - name: Verify calculations and existing invariants
+        run: |
+          mkdir -p /tmp/eb-coverage-review
+          for f in *.js *.cjs; do node --check "$f"; done
+          set -o pipefail
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done | tee /tmp/eb-coverage-review/unit.log
+      - name: Prepare browser runtime
+        if: github.ref != 'refs/heads/main'
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Verify coverage, shared edits and full-storage save regression
+        if: github.ref != 'refs/heads/main'
+        env:
+          EB_COVERAGE_REVIEW: /tmp/eb-coverage-review
+          EB_ORDERS_SAVE_REVIEW: /tmp/eb-coverage-review
+        run: |
+          set -o pipefail
+          for engine in chromium webkit; do
+            EB_BROWSER=$engine python3 tests/browser-orders-coverage.py 2>&1 | tee /tmp/eb-coverage-review/$engine-coverage.log
+            EB_BROWSER=$engine python3 tests/browser-orders-save.py 2>&1 | tee /tmp/eb-coverage-review/$engine-save.log
+            EB_BROWSER=$engine python3 tests/browser-storage-quota.py 2>&1 | tee /tmp/eb-coverage-review/$engine-quota.log
+          done
+      - name: Commit verified integration
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orders.html orders-ui.js Dockerfile
+          if ! git diff --cached --quiet; then
+            git commit -m 'Integrar totales de pedidos y cobertura CDMX Oaxaca sin alterar guardados'
+            git push origin HEAD:work/order-coverage-20261111
+          fi
+      - name: Verify exact published files and protected state
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request,urllib.error,time
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(45):
+              try:
+                  for name in ['orders.html','orders-ui.js','orders-coverage.js','orders-coverage.css','shared.js']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          try:urllib.request.urlopen(base+'api/state',timeout=15);raise AssertionError('Unexpected public access')
+          except urllib.error.HTTPError as e:assert e.code==401
+          print('PASS exact published coverage; no real records read or modified.')
+          PY
+      - name: Package review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-coverage-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-coverage-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orders-coverage-review
+          path: /tmp/eb-coverage-review
+          retention-days: 3
