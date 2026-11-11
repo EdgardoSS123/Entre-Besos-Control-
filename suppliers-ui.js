@@ -80,10 +80,10 @@ function open(id){
  $('supplier-form').oninput=()=>{dirty=true;};$('supplier-form').onchange=()=>{dirty=true;};$('supplier-form').onsubmit=e=>{e.preventDefault();save();};
 }
 function options(extra={}){return{...editing,...extra,operation:crypto.randomUUID(),stamp:new Date().toISOString(),actor:window.EBShared.user.username};}
-function persist(result,raw){
+async function persist(result,raw){
  if(result.unchanged)return;
  if(localStorage.getItem('eb-v1')!==raw)throw Error('La base cambió en otra pestaña. Vuelve a abrir el proveedor antes de guardar.');
- localStorage.setItem('eb-v1',JSON.stringify(result.data));
+ await window.EBShared.writeState(JSON.stringify(result.data));
 }
 async function confirmShared(result,label){
  try{const row=await window.EBShared.snapshot(),saved=(row.data.suppliers||[]).find(x=>x.id===result.record.id);if(saved&&saved.version>=result.record.version)message(label+' Confirmado en la base compartida.');else message(label+' Revisa la sincronización.',true);}catch(e){message(label+' Guardado en este dispositivo; pendiente de sincronizar.',true);}
@@ -92,7 +92,7 @@ async function save(){
  if(busy||!editor())return;busy=true;setSaving(true);formError('');let locallySaved=false;
  try{
   const input=collectInput(),before=read(),result=C.change(before.data,input,options());
-  persist(result,before.raw);locallySaved=true;
+  await persist(result,before.raw);locallySaved=true;
   // Retrying after a network problem updates this same record, never adds a duplicate.
   editing={id:result.record.id,expected:JSON.stringify(result.record)};
   setSaving(true);await confirmedRecord(result);
@@ -105,7 +105,7 @@ async function save(){
 async function changeState(id,action){
  if(busy||!editor()||dialog)return;const before=read(),r=C.rows(before.data).find(x=>x.id===id);if(!r)return;
  if(!confirm(action==='delete'?'¿Enviar a '+C.view(r).name+' a Papelera? No cambia inventarios ni pedidos.':'¿Restaurar este proveedor?'))return;busy=true;
- try{const state=window.EBEditReturn?.capture(),result=C.change(before.data,null,{id,expected:JSON.stringify(r),action,operation:crypto.randomUUID(),stamp:new Date().toISOString(),actor:window.EBShared.user.username});persist(result,before.raw);window.EBShared.cancelDraft();render();window.EBEditReturn?.restore(state);await confirmShared(result,action==='delete'?'Proveedor enviado a Papelera.':'Proveedor restaurado.');}catch(e){message(e.message,true);}finally{busy=false;}
+ try{const state=window.EBEditReturn?.capture(),result=C.change(before.data,null,{id,expected:JSON.stringify(r),action,operation:crypto.randomUUID(),stamp:new Date().toISOString(),actor:window.EBShared.user.username});await persist(result,before.raw);window.EBShared.cancelDraft();render();window.EBEditReturn?.restore(state);await confirmShared(result,action==='delete'?'Proveedor enviado a Papelera.':'Proveedor restaurado.');}catch(e){message(e.message,true);}finally{busy=false;}
 }
 window.EBSuppliers={render,get dirty(){return dirty;}};
 window.addEventListener('storage',e=>{if(e.key!=='eb-v1')return;if(dialog){formError('Hay cambios en otro dispositivo. Tu captura se conserva y se verificará al guardar.');return;}const state=window.EBEditReturn?.capture();render();window.EBEditReturn?.restore(state);});

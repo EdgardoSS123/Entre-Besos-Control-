@@ -90,7 +90,7 @@ function preview(){
 async function commit(result,before){
  if(!result.unchanged){
   if(localStorage.getItem('eb-v1')!==before.raw)throw Error('La información cambió en otra pestaña. Tu captura se conserva; vuelve a guardar.');
-  localStorage.setItem('eb-v1',JSON.stringify(result.data));
+  await window.EBShared.writeState(JSON.stringify(result.data));
  }
  // Keep the same ID and expected version on retries after an ambiguous or
  // failed response. An unchanged local record still needs cloud confirmation.

@@ -5,3 +5,5 @@
 
 /* Save outcome must be visible beside the action, including small screens. */
 #order-error:not([hidden]){padding:12px;border:1px solid #efa9bf;background:#fff3f7;border-radius:10px;margin:12px 0;overflow-wrap:anywhere}#order-error[hidden]{display:none}.order-dialog [disabled]{cursor:wait;opacity:.7}.order-form-actions{gap:10px;flex-wrap:wrap}.order-form-actions .primary{min-width:155px}
+
+.order-dialog .fields>label{min-width:0}.order-dialog input[type=date]{min-width:0;max-width:100%;width:100%;-webkit-appearance:none;appearance:none}
