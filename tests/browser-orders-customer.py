@@ -16,7 +16,7 @@ for _ in range(60):
  try: urllib.request.urlopen(BASE+'healthz',timeout=1); break
  except Exception: time.sleep(.1)
 def synced(p):
- p.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=25000)
+ p.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&!window.EBOrdersUI?.saving&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=25000)
 def login(p,user='test-editor'):
  p.locator('#eb-user').fill(user);p.locator('#eb-password').fill('recipient-test-only');p.locator('#eb-enter').click()
 def state(p): return p.evaluate('JSON.parse(localStorage.getItem("eb-v1"))')

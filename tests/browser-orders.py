@@ -16,7 +16,7 @@ for _ in range(60):
 def login(page,user='test-editor'):
  expect(page.locator('#eb-user')).to_be_visible();page.locator('#eb-user').fill(user);page.locator('#eb-password').fill('orders-test-only');page.locator('#eb-enter').click()
 def synced(page):
- page.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=30000)
+ page.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&!window.EBOrdersUI?.saving&&document.getElementById('eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=30000)
 def stock(page,lot='ORD-ESP'):
  return page.evaluate('(id)=>window.EBLedger.reconciliation(JSON.parse(localStorage.getItem("eb-v1")),id)',lot)
 def capture(page,name):

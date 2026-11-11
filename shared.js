@@ -214,7 +214,24 @@ async function reportSnapshot(){
  if(!row.data)throw Error('Conecta primero la PC con tus datos. La base compartida aún no tiene información.');
  return row;
 }
-window.EBShared={user:null,partnerReport:async()=>{if(who?.role==='editor'){await flush();if(get(OUT)||conflict||sending)throw Error('Confirma Actualizado antes de generar el reporte.');}return api('partner-report');},get revision(){return revision;},flush,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
+// Order editing starts from the latest confirmed workspace, not a stale full
+// snapshot captured before another partner saved. This never merges conflicts
+// silently, discards an outbox, or changes an open form.
+async function prepareSave(){
+ if(!ready||!who||who.role!=='editor')throw Error('Entra con un socio EB1 para guardar. Tu captura se conserva.');
+ await flush();
+ if(get(OUT)||conflict||sending)throw lastSyncError||Error('Hay cambios todavía sin confirmar. Tu captura se conserva; vuelve a pulsar Guardar.');
+ const original=get(KEY),account=who.username;
+ const session=await api('session');
+ if(!session.authenticated||session.user?.username!==account||session.user?.role!=='editor')throw Error('La cuenta cambió o venció. Entra de nuevo con el mismo socio EB1; tu captura se conserva.');
+ csrf=session.csrf;
+ const row=await api('state');
+ if(get(OUT)||sending||get(KEY)!==original)throw Error('Otra pestaña está guardando. Se conserva tu captura; vuelve a pulsar Guardar al terminar.');
+ if(!row.data)throw Error('Conecta primero la base compartida desde tu PC.');
+ if(row.revision<revision)throw Error('La base se está actualizando. Tu captura se conserva; vuelve a guardar.');
+ accept(row);seenSignature=signature(get(KEY));return row;
+}
+window.EBShared={user:null,partnerReport:async()=>{if(who?.role==='editor'){await flush();if(get(OUT)||conflict||sending)throw Error('Confirma Actualizado antes de generar el reporte.');}return api('partner-report');},get revision(){return revision;},flush,prepareSave,snapshot:reportSnapshot,cancelDraft(){touched=false;},get pending(){return!!get(OUT);}};
 async function boot(){screen('Conectando Entre Besos','Revisando acceso y datos compartidos…');try{const s=await api('session');if(!s.authenticated)return login();who=s.user;csrf=s.csrf;await connect();}catch(e){screen('Conectar Entre Besos',e.message,'<button id="eb-start-retry">Reintentar</button><button id="eb-start-backup" class="secondary">Respaldo local</button>');$('eb-start-retry').onclick=boot;$('eb-start-backup').onclick=()=>backup();}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

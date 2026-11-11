@@ -5,12 +5,31 @@ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const num=n=>new Intl.NumberFormat('es-MX').format(n),when=v=>v?new Date(v.length>10?v:v+'T12:00:00Z').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric',timeZone:'America/Mexico_City'}):'Sin fecha';
 const name=id=>O.PARTNERS.find(x=>x.id===id)?.name||id;
 const states={pending:'Entrega pendiente',delivered:'Entregado',cancelled:'Cancelado',deleted:'Eliminado'};
-let selected=new URLSearchParams(location.search).get('partner')||'',filter='all',fromDate='',toDate='',dialog=null,busy=false,dirty=false,editing=null,lines=[],draftId='';
+let selected=new URLSearchParams(location.search).get('partner')||'',filter='all',fromDate='',toDate='',dialog=null,busy=false,dirty=false,editing=null,lines=[],draftId='',unconfirmedOrder=null;
 if(!O.PARTNERS.some(x=>x.id===selected))selected='';
 const canEdit=()=>window.EBShared?.user?.role==='editor';
 function read(){const raw=localStorage.getItem('eb-v1'),data=JSON.parse(raw||'null');if(!data||!Array.isArray(data.lots)||!Array.isArray(data.moves))throw Error('No se pudo leer la información compartida.');O.rows(data);return{raw,data};}
 function say(message,error=false){const t=$('orders-message');if(t){t.textContent=message;t.dataset.error=String(error);}}
-function formError(m){const el=$('order-error');if(el)el.textContent=m;else say(m,true);}
+function formError(m){const el=$('order-error');if(el){el.textContent=m;el.hidden=!m;if(m)el.scrollIntoView({block:'nearest'});}else say(m,true);}
+function setSaving(value){
+ const form=$('order-form');if(!form)return;form.setAttribute('aria-busy',String(value));
+ form.querySelectorAll('input,select,textarea,button').forEach(el=>{el.disabled=value;});
+ if($('order-close'))$('order-close').disabled=value;
+ const b=$('order-save');if(b)b.textContent=value?'Guardando y confirmando…':'Guardar pedido';
+}
+function validateForm(){
+ const form=$('order-form'),invalid=[...form.querySelectorAll('input,select,textarea')].find(el=>!el.validity.valid);
+ if(invalid){
+  const message=invalid.id==='order-customer'?'Indica para quién es el pedido.':invalid.id==='order-date'?'Selecciona una fecha válida.':invalid.matches('[data-lot]')?'Selecciona el lote de cada variedad.':invalid.matches('[data-amount]')?'Indica una cantidad mayor que cero.':'Revisa el campo indicado antes de guardar.';
+  invalid.focus({preventScroll:true});throw Error(message);
+ }
+ const value=input();if(!value.customer.trim())throw Error('Indica para quién es el pedido.');
+ O.validate(read().data,value,I);return value;
+}
+function closeForm(){
+ const el=dialog;dialog=null;editing=null;dirty=false;unconfirmedOrder=null;
+ if(el){el.onclose=null;el.close();el.remove();}window.EBShared?.cancelDraft?.();
+}
 function pack(n){return num(n)+' botellas · '+num(Math.floor(n/6))+' cajas'+(n%6?' + '+n%6+' sueltas':'');}
 function render(){
  try{
@@ -49,15 +68,15 @@ function drawLines(){
 let orderReturn=null;
 function openForm(id){
  if(!canEdit()||busy)return;orderReturn=window.EBEditReturn?.capture();const data=read().data,order=id?O.rows(data).find(r=>r.id===id):null;if(id&&!order){say('No se encontró el pedido.',true);return;}
- editing=order?{id:order.id,expected:JSON.stringify(order)}:null;draftId=order?.id||crypto.randomUUID();dirty=false;
+ editing=order?{id:order.id,expected:JSON.stringify(order)}:null;draftId=order?.id||crypto.randomUUID();dirty=false;unconfirmedOrder=null;
  const available=data.lots,defaultProduct=available[0]?.p??0,lots=available.filter(l=>l.p===defaultProduct);
  lines=order?JSON.parse(JSON.stringify(order.lines)):[{product:defaultProduct,lotId:lots.length===1?lots[0].id:'',amount:'',unit:'box'}];
  dialog=document.createElement('dialog');dialog.id='order-dialog';dialog.className='order-dialog';
- dialog.innerHTML='<div class="order-dialog-head"><div><div class="eyebrow">'+esc(name(order?.partner||selected))+'</div><h2>'+ (order?'Editar '+esc(order.code):'Nuevo pedido')+'</h2></div><button type="button" id="order-close" aria-label="Cerrar">×</button></div><form id="order-form"><div id="order-error" role="alert"></div><div class="fields"><label class="wide" for="order-customer">Cliente / para quién es el pedido *<input id="order-customer" type="text" maxlength="240" required list="order-customers" placeholder="Nombre de la persona o empresa" value="'+esc(order?.customer||'')+'" autocomplete="off"><datalist id="order-customers">'+customerOptions(data)+'</datalist></label><label>Fecha de entrega solicitada<input id="order-date" type="date" required value="'+esc(order?.date||O.today())+'"></label><label>Estado<select id="order-status"><option value="pending" '+(order?.status!=='delivered'?'selected':'')+'>Entrega pendiente</option><option value="delivered" '+(order?.status==='delivered'?'selected':'')+'>Entregado</option></select></label><label class="wide">Bodega de salida<select id="order-from" required>'+I.locations(data).map(x=>'<option value="'+esc(x)+'" '+(x===(order?.from||'CDMX')?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select></label></div><div id="order-lines"></div><button type="button" class="secondary" id="order-add-line">+ Otra variedad</button><details class="order-dates"><summary>Notas (opcional)</summary><label>Entrega o referencia<input id="order-notes" maxlength="1000" value="'+esc(order?.notes||'')+'"></label></details><div id="order-preview" class="order-preview" role="status"></div><p class="order-stock-note">1 caja = 6 botellas. La entrega registra una salida; no inventa un precio ni un cobro. No registres otra salida para estas mismas botellas.</p><div class="order-form-actions"><button type="button" class="secondary" id="order-discard">Cancelar</button><button type="submit" class="primary" id="order-save">Guardar pedido</button></div></form>';
+ dialog.innerHTML='<div class="order-dialog-head"><div><div class="eyebrow">'+esc(name(order?.partner||selected))+'</div><h2>'+ (order?'Editar '+esc(order.code):'Nuevo pedido')+'</h2></div><button type="button" id="order-close" aria-label="Cerrar">×</button></div><form id="order-form" novalidate><div class="fields"><label class="wide" for="order-customer">Cliente / para quién es el pedido *<input id="order-customer" type="text" maxlength="240" required list="order-customers" placeholder="Nombre de la persona o empresa" value="'+esc(order?.customer||'')+'" autocomplete="off"><datalist id="order-customers">'+customerOptions(data)+'</datalist></label><label>Fecha de entrega solicitada<input id="order-date" type="date" required value="'+esc(order?.date||O.today())+'"></label><label>Estado<select id="order-status"><option value="pending" '+(order?.status!=='delivered'?'selected':'')+'>Entrega pendiente</option><option value="delivered" '+(order?.status==='delivered'?'selected':'')+'>Entregado</option></select></label><label class="wide">Bodega de salida<select id="order-from" required>'+I.locations(data).map(x=>'<option value="'+esc(x)+'" '+(x===(order?.from||'CDMX')?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select></label></div><div id="order-lines"></div><button type="button" class="secondary" id="order-add-line">+ Otra variedad</button><details class="order-dates"><summary>Notas (opcional)</summary><label>Entrega o referencia<input id="order-notes" maxlength="1000" value="'+esc(order?.notes||'')+'"></label></details><div id="order-preview" class="order-preview" role="status"></div><p class="order-stock-note">1 caja = 6 botellas. La entrega registra una salida; no inventa un precio ni un cobro. No registres otra salida para estas mismas botellas.</p><div id="order-error" role="alert" hidden></div><div class="order-form-actions"><button type="button" class="secondary" id="order-discard">Cancelar</button><button type="submit" class="primary" id="order-save">Guardar pedido</button></div></form>';
  document.body.append(dialog);dialog.showModal();drawLines();
  $('order-add-line').onclick=()=>{if(lines.length>=30)return;captureLines();lines.push({product:defaultProduct,lotId:lots.length===1?lots[0].id:'',amount:'',unit:'box'});dirty=true;drawLines();};
  const close=()=>{if(busy)return;if(dirty&&!confirm('¿Salir sin guardar este pedido?'))return;dialog.close();};$('order-close').onclick=close;$('order-discard').onclick=close;
- dialog.addEventListener('cancel',e=>{e.preventDefault();close();});dialog.onclose=()=>{dialog.remove();dialog=null;editing=null;dirty=false;window.EBShared?.cancelDraft?.();};
+ dialog.addEventListener('cancel',e=>{e.preventDefault();close();});dialog.onclose=closeForm;
  $('order-form').addEventListener('input',()=>{dirty=true;preview();});$('order-form').addEventListener('change',()=>{dirty=true;preview();});$('order-form').onsubmit=e=>{e.preventDefault();saveForm();};
 }
 function input(){captureLines();return{partner:selected,customer:$('order-customer').value,from:$('order-from').value,date:$('order-date').value,status:$('order-status').value,lines,notes:$('order-notes').value};}
@@ -69,28 +88,52 @@ function preview(){
  }catch(e){box.textContent='Elige la variedad, su lote y la cantidad. Las cajas se convierten automáticamente a botellas.';box.dataset.warning='false';}
 }
 async function commit(result,before){
- if(result.unchanged){say('El pedido ya estaba guardado; no se volvió a descontar.');return;}
- if(localStorage.getItem('eb-v1')!==before.raw)throw Error('La información cambió en otra pestaña. Actualiza antes de guardar.');
- localStorage.setItem('eb-v1',JSON.stringify(result.data));dirty=false;window.EBShared?.cancelDraft?.();
- const back=dialog?orderReturn:window.EBEditReturn?.capture();if(dialog)dialog.close();render();window.EBEditReturn?.restore(back);
- let message='Pedido guardado. '+(result.order.status==='delivered'?'Existencias descontadas una sola vez.':result.order.status==='pending'?'Entrega pendiente.':result.order.status==='deleted'?'Pedido en Papelera; se revirtió su salida, cuando correspondía.':'Pedido cancelado; se revirtió su salida, cuando correspondía.');
+ if(!result.unchanged){
+  if(localStorage.getItem('eb-v1')!==before.raw)throw Error('La información cambió en otra pestaña. Tu captura se conserva; vuelve a guardar.');
+  localStorage.setItem('eb-v1',JSON.stringify(result.data));
+ }
+ // Keep the same ID and expected version on retries after an ambiguous or
+ // failed response. An unchanged local record still needs cloud confirmation.
+ unconfirmedOrder=result.order;
+ if(dialog){editing={id:result.order.id,expected:JSON.stringify(result.order)};dirty=true;}
+ const row=await window.EBShared.snapshot();
+ const saved=(row.data?.partnerOrders||[]).find(x=>x.id===result.order.id);
+ if(!saved||JSON.stringify(saved)!==JSON.stringify(result.order))throw Error('El pedido no coincide con la versión compartida. Revisa si otro socio lo modificó; tu captura se conserva.');
+ const back=dialog?orderReturn:window.EBEditReturn?.capture();
+ if(dialog)closeForm();else {unconfirmedOrder=null;window.EBShared?.cancelDraft?.();}
+ render();window.EBEditReturn?.restore(back);
+ let message='Pedido guardado y confirmado en la base compartida. '+(result.order.status==='delivered'?'Existencias descontadas una sola vez.':result.order.status==='pending'?'Entrega pendiente; sin descontar existencias.':result.order.status==='deleted'?'Pedido en Papelera; se revirtió su salida, cuando correspondía.':'Pedido cancelado; se revirtió su salida, cuando correspondía.');
  if(result.warnings.length)message+=' Hay saldo negativo por cuadrar.';say(message);
- try{const row=await window.EBShared.snapshot(),saved=(row.data.partnerOrders||[]).find(x=>x.id===result.order.id);if(saved&&saved.version>=result.order.version)say(message+' Confirmado en la base compartida.');else say('Guardado local; revisa la sincronización.',true);}catch(e){say('Guardado local. La sincronización sigue pendiente: '+e.message,true);}
 }
 function meta(){return{id:draftId,operation:crypto.randomUUID(),stamp:new Date().toISOString(),day:O.today(),actor:window.EBShared.user.username,...(editing?{expected:editing.expected}:{})};}
 async function saveForm(){
- if(busy||!canEdit())return;busy=true;$('order-save').disabled=true;formError('');
- try{if(window.EBShared.pending)throw Error('Termina de sincronizar el cambio anterior antes de guardar otro pedido.');const before=read(),result=O.save(before.data,input(),meta(),I);await commit(result,before);if(result.unchanged&&dialog){dirty=false;dialog.close();render();window.EBEditReturn?.restore(orderReturn);window.EBShared?.cancelDraft?.();say('Sin cambios. No se volvió a descontar producto.');}}
- catch(e){formError('No se guardó: '+e.message);}finally{busy=false;if($('order-save'))$('order-save').disabled=false;}
+ if(busy||!canEdit())return;formError('');let value;
+ try{value=validateForm();}catch(e){formError(e.message);return;}
+ busy=true;setSaving(true);
+ try{
+  await window.EBShared.prepareSave();
+  const before=read(),result=O.save(before.data,value,meta(),I);
+  await commit(result,before);
+ }catch(e){formError(unconfirmedOrder?'El pedido está guardado en este dispositivo, pero falta confirmarlo en la base compartida. No lo crees otra vez; pulsa Guardar para reintentar. '+e.message:'No se guardó: '+e.message);}
+ finally{busy=false;setSaving(false);}
 }
 async function transition(id,target){
- if(busy||!canEdit())return;const before=read(),r=O.rows(before.data).find(x=>x.id===id);if(!r)return;
+ if(busy||!canEdit())return;const r=O.rows(read().data).find(x=>x.id===id);if(!r)return;
  const question=target==='deleted'?'¿Eliminar '+r.code+'? Se revertirá su salida si estaba entregado. Puedes recuperarlo desde Papelera.':target==='restored'?'¿Recuperar '+r.code+' como pendiente? No descontará producto hasta marcarlo entregado.':target==='delivered'?'¿Marcar '+r.code+' entregado y descontar '+num(r.quantity)+' botellas de '+r.from+'?':target==='pending'?'¿Volver a pendiente? Se devolverán al saldo las botellas descontadas por este pedido.':'¿Cancelar '+r.code+'? Si estaba entregado, se revertirá su salida de bodega.';
- if(!confirm(question))return;busy=true;
- try{if(window.EBShared.pending)throw Error('Hay un cambio pendiente de sincronizar. Espera a Actualizado.');const opts={id,expected:JSON.stringify(r),operation:crypto.randomUUID(),stamp:new Date().toISOString(),day:O.today(),actor:window.EBShared.user.username};const action={cancelled:'cancel',deleted:'delete',restored:'restore'}[target];const result=action?O.save(before.data,null,{...opts,action},I):O.setStatus(before.data,id,target,opts,I);await commit(result,before);}
- catch(e){say('No se modificó: '+e.message,true);}finally{busy=false;}
+ if(!confirm(question))return;busy=true;unconfirmedOrder=null;
+ say('Guardando y confirmando el cambio…');
+ try{
+  await window.EBShared.prepareSave();const before=read();
+  const opts={id,expected:JSON.stringify(r),operation:crypto.randomUUID(),stamp:new Date().toISOString(),day:O.today(),actor:window.EBShared.user.username};
+  const current=O.rows(before.data).find(x=>x.id===id);
+  if(JSON.stringify(current)!==JSON.stringify(r))throw Error('Este pedido cambió en otro dispositivo. Actualiza antes de cambiar su estado.');
+  const action={cancelled:'cancel',deleted:'delete',restored:'restore'}[target];
+  const result=r.status===target?{data:before.data,order:r,unchanged:true,warnings:[]}:action?O.save(before.data,null,{...opts,action},I):O.setStatus(before.data,id,target,opts,I);
+  await commit(result,before);
+ }catch(e){say(unconfirmedOrder?'Cambio guardado en este dispositivo; falta confirmarlo. Reintenta la misma acción, sin crear otro pedido. '+e.message:'No se modificó: '+e.message,true);}
+ finally{busy=false;}
 }
-window.EBOrdersUI={render,get dirty(){return dirty;}};
+window.EBOrdersUI={render,get dirty(){return dirty;},get saving(){return busy;}};
 window.addEventListener('storage',e=>{if(e.key!=='eb-v1')return;if(dialog){formError('Hay cambios en otro dispositivo. Tu captura se conserva; se verificará al guardar.');return;}render();});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 render();

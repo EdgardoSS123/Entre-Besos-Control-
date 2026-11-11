@@ -14,7 +14,7 @@ for _ in range(80):
  try:urllib.request.urlopen(BASE+'healthz',timeout=1);break
  except Exception:time.sleep(.1)
 seed=json.loads(subprocess.check_output(['node','-e',"let I=require('./inventory-core.js');for(const f of ['commerce-core','simple-core','corrections-core'])I=require('./'+f+'.js')(I);let d={lots:[{id:'AUDIT',p:0,bottles:480,ml:720,unitCost:200,totalCost:96000}],moves:[],contacts:[{name:'PRIVATE_CONTACT',country:'USA',email:'secret@example.test'}],suppliers:[{name:'PRIVATE_SUPPLIER'}],materials:[],supplies:[],expenses:[{type:'Gasto',amount:100,notes:'PRIVATE_NOTES'}]};d=I.initializeOrigin(d,'AUDIT','CDMX','2026-11-09','2026-11-09T18:00:00Z');console.log(JSON.stringify(d));"],text=True))
-def ready(p):p.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&document.querySelector('#eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=20000)
+def ready(p):p.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&!window.EBOrdersUI?.saving&&document.querySelector('#eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=20000)
 def login(ctx,name):
  r=ctx.request.post(BASE+'api/login',data={'username':name,'password':'audit-synthetic-password'},headers={'Origin':BASE[:-1]});assert r.ok,r.text();return r.json()['csrf']
 try:

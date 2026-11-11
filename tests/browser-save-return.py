@@ -26,7 +26,7 @@ for _ in range(60):
  try:urllib.request.urlopen(BASE+'healthz',timeout=1);break
  except Exception:time.sleep(.1)
 def ready(page):
- page.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&document.querySelector('#eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=20000)
+ page.wait_for_function("()=>window.EBShared&&!window.EBShared.pending&&!window.EBOrdersUI?.saving&&document.querySelector('#eb-cloud-state')?.textContent.startsWith('Actualizado')",timeout=20000)
 def login(ctx):
  r=ctx.request.post(BASE+'api/login',data={'username':'test-editor','password':'save-return-only'},headers={'Origin':BASE[:-1]});assert r.ok,r.text();return r.json()['csrf']
 def seed_state(ctx,csrf):
