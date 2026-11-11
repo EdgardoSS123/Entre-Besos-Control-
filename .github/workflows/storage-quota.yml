@@ -2,7 +2,7 @@ name: Verify browser quota recovery
 on:
   push:
     branches: [main, fix/order-storage-quota-20261111]
-    paths: ['.github/scripts/fix-storage-quota.py', '.github/workflows/storage-quota.yml', 'tests/browser-storage-quota.py', 'shared.js', 'orders-ui.js', 'suppliers-ui.js']
+    paths: ['.github/scripts/fix-storage-quota.py', '.github/scripts/quota-followup.py', '.github/workflows/storage-quota.yml', 'tests/browser-storage-quota.py', 'shared.js', 'orders-ui.js', 'suppliers-ui.js']
 permissions:
   contents: write
 defaults:
@@ -37,7 +37,9 @@ jobs:
           fi
       - name: Apply narrowly scoped repair
         if: github.ref != 'refs/heads/main'
-        run: python3 .github/scripts/fix-storage-quota.py
+        run: |
+          python3 .github/scripts/fix-storage-quota.py
+          python3 .github/scripts/quota-followup.py
       - name: Verify all calculation and permission invariants
         run: |
           mkdir -p /tmp/eb-quota-review
