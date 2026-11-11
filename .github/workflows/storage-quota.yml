@@ -1,0 +1,98 @@
+name: Verify browser quota recovery
+on:
+  push:
+    branches: [main, fix/order-storage-quota-20261111]
+    paths: ['.github/scripts/fix-storage-quota.py', '.github/workflows/storage-quota.yml', 'tests/browser-storage-quota.py', 'shared.js', 'orders-ui.js', 'suppliers-ui.js']
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare isolated browser tests
+        if: github.ref != 'refs/heads/main'
+        run: |
+          mkdir -p /tmp/eb-quota-review /tmp/eb-quota-baseline
+          cp shared.js orders-ui.js /tmp/eb-quota-baseline/
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Reproduce the exact full-storage failure on previous code
+        if: github.ref != 'refs/heads/main'
+        env:
+          EB_QUOTA_BASELINE: /tmp/eb-quota-baseline
+          EB_ORDERS_SAVE_REVIEW: /tmp/eb-quota-review
+        run: |
+          set -o pipefail
+          if ! grep -q 'async function writeState' shared.js; then
+            EB_BROWSER=webkit python3 tests/browser-storage-quota.py 2>&1 | tee /tmp/eb-quota-review/reproduced.log
+          fi
+      - name: Apply narrowly scoped repair
+        if: github.ref != 'refs/heads/main'
+        run: python3 .github/scripts/fix-storage-quota.py
+      - name: Verify all calculation and permission invariants
+        run: |
+          mkdir -p /tmp/eb-quota-review
+          for f in *.js *.cjs; do node --check "$f"; done
+          set -o pipefail
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done | tee /tmp/eb-quota-review/unit.log
+      - name: Verify full storage recovery save-return and interrupted saves
+        if: github.ref != 'refs/heads/main'
+        env:
+          EB_ORDERS_SAVE_REVIEW: /tmp/eb-quota-review
+        run: |
+          set -o pipefail
+          EB_BROWSER=chromium python3 tests/browser-storage-quota.py 2>&1 | tee /tmp/eb-quota-review/chromium-quota.log
+          EB_BROWSER=webkit python3 tests/browser-storage-quota.py 2>&1 | tee /tmp/eb-quota-review/webkit-quota.log
+          EB_BROWSER=chromium python3 tests/browser-orders-save.py 2>&1 | tee /tmp/eb-quota-review/chromium-orders.log
+          EB_BROWSER=webkit python3 tests/browser-orders-save.py 2>&1 | tee /tmp/eb-quota-review/webkit-orders.log
+          python3 tests/browser-supplier-save.py 2>&1 | tee /tmp/eb-quota-review/suppliers.log
+      - name: Commit only verified repair
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add shared.js orders-ui.js orders.css suppliers-ui.js '*.html'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Guardar pedidos con almacenamiento local lleno sin borrar datos ni duplicar salidas'
+            git push origin HEAD:fix/order-storage-quota-20261111
+          fi
+      - name: Verify exact production files and protected state
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import time,urllib.request,urllib.error
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(40):
+              try:
+                  for name in ['shared.js','orders-ui.js','orders.css','orders.html','suppliers-ui.js','suppliers.html']:
+                      assert urllib.request.urlopen(base+name+'?verify='+str(time.time_ns()),timeout=15).read()==Path(name).read_bytes(),name
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(4)
+          try:urllib.request.urlopen(base+'api/state',timeout=15);raise AssertionError('Unexpected public data access')
+          except urllib.error.HTTPError as e:assert e.code==401
+          print('PASS exact published quota repair; no production data modified.')
+          PY
+      - name: Package review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-quota-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-quota-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quota-recovery-review
+          path: /tmp/eb-quota-review
+          retention-days: 3
