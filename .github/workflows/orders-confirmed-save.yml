@@ -2,7 +2,7 @@ name: Verify confirmed order saves
 on:
   push:
     branches: [main, fix/orders-confirmed-save-20261111]
-    paths: ['orders-ui.js', 'orders.css', 'orders.html', 'shared.js', 'tests/browser-orders-save.py', '.maintenance/orders-confirmed-save.b64', '.github/workflows/orders-confirmed-save.yml']
+    paths: ['orders-ui.js', 'orders.css', 'orders.html', 'shared.js', 'tests/browser-orders-save.py', '.maintenance/orders-confirmed-save.b64', '.github/workflows/orders-confirmed-save.yml', '.github/scripts/orders-save-followup.py']
 permissions:
   contents: write
 jobs:
@@ -39,7 +39,9 @@ jobs:
         if: github.ref == 'refs/heads/fix/orders-confirmed-save-20261111'
         env:
           EB_EXPECT_BUG: '1'
-        run: python tests/browser-orders-save.py | tee /tmp/eb-orders-save-review/baseline.log
+        run: |
+          python tests/browser-orders-save.py > /tmp/eb-orders-save-review/baseline.log 2>&1 || { cat /tmp/eb-orders-save-review/baseline.log; exit 1; }
+          cat /tmp/eb-orders-save-review/baseline.log
       - name: Apply exact checked source changes
         if: github.ref == 'refs/heads/fix/orders-confirmed-save-20261111'
         run: |
@@ -56,6 +58,7 @@ jobs:
               assert hashlib.sha256(old.encode()).hexdigest()==c['after']
               p.write_text(old)
           PY
+          python .github/scripts/orders-save-followup.py
       - name: Verify all existing calculations and access invariants
         run: |
           node --check shared.js
@@ -79,7 +82,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add orders-ui.js orders.css orders.html shared.js tests/browser-orders-save.py .maintenance/orders-confirmed-save.b64
+          git add orders-ui.js orders.css orders.html shared.js tests/browser-orders-save.py tests/browser-orders-customer.py tests/browser-orders.py tests/browser-audit.py tests/browser-save-return.py .maintenance/orders-confirmed-save.b64
           if ! git diff --cached --quiet; then
             git commit -m 'Corregir guardado de pedidos: confirmación, reintentos seguros y regreso al listado'
             git push origin HEAD:fix/orders-confirmed-save-20261111
