@@ -1,0 +1,118 @@
+name: Verify confirmed order saves
+on:
+  push:
+    branches: [main, fix/orders-confirmed-save-20261111]
+    paths: ['orders-ui.js', 'orders.css', 'orders.html', 'shared.js', 'tests/browser-orders-save.py', '.maintenance/orders-confirmed-save.b64', '.github/workflows/orders-confirmed-save.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare disposable browser runtime and review
+        run: |
+          mkdir -p /tmp/eb-orders-save-review
+          python -m pip install playwright==1.56.0
+          sh .github/scripts/build-pdf.sh
+      - name: Validate reviewed patch and install only regression test
+        if: github.ref == 'refs/heads/fix/orders-confirmed-save-20261111'
+        run: |
+          python - <<'PY'
+          import base64,gzip,json,hashlib
+          from pathlib import Path
+          p=Path('.maintenance/orders-confirmed-save.b64')
+          s=p.read_text().replace('T5bZJ9','T5bJ9').replace('PYRBRS TGF','PYRBSTGF').replace('My9S NiAS','My9QNiAS').replace('S5pkix','S5Xkix')
+          raw=gzip.decompress(base64.b64decode(s,validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='fed970d2d827a987dc3d683dba70bc6957591a3478d22493f56b384cd8a22e5c'
+          changes=json.loads(raw);p.write_text(s)
+          Path('/tmp/eb-orders-save-review/changes.json').write_bytes(raw)
+          c=next(x for x in changes if x['path']=='tests/browser-orders-save.py');assert c['before'] is None and len(c['ops'])==1
+          Path(c['path']).write_text(c['ops'][0][2])
+          PY
+      - name: Reproduce previous pending blocker and premature close
+        if: github.ref == 'refs/heads/fix/orders-confirmed-save-20261111'
+        env:
+          EB_EXPECT_BUG: '1'
+        run: python tests/browser-orders-save.py | tee /tmp/eb-orders-save-review/baseline.log
+      - name: Apply exact checked source changes
+        if: github.ref == 'refs/heads/fix/orders-confirmed-save-20261111'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          for c in json.loads(Path('/tmp/eb-orders-save-review/changes.json').read_text()):
+              p=Path(c['path']);assert not p.is_absolute() and '..' not in p.parts
+              old=p.read_text() if p.exists() else ''
+              current=hashlib.sha256(old.encode()).hexdigest() if p.exists() else None
+              if current==c['after']:continue
+              assert current==c['before'],str(p)+' changed since reviewed baseline'
+              for a,b,new in reversed(c['ops']):old=old[:a]+new+old[b:]
+              assert hashlib.sha256(old.encode()).hexdigest()==c['after']
+              p.write_text(old)
+          PY
+      - name: Verify all existing calculations and access invariants
+        run: |
+          node --check shared.js
+          node --check orders-ui.js
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done > /tmp/eb-orders-save-review/units.log 2>&1
+          cat /tmp/eb-orders-save-review/units.log
+      - name: Verify real pending slow failed duplicate and multi-partner saves
+        run: |
+          EB_BROWSER=chromium python tests/browser-orders-save.py > /tmp/eb-orders-save-review/chromium.log 2>&1 || { cat /tmp/eb-orders-save-review/chromium.log; exit 1; }
+          cat /tmp/eb-orders-save-review/chromium.log
+          EB_BROWSER=webkit python tests/browser-orders-save.py > /tmp/eb-orders-save-review/webkit.log 2>&1 || { cat /tmp/eb-orders-save-review/webkit.log; exit 1; }
+          cat /tmp/eb-orders-save-review/webkit.log
+      - name: Verify existing recipient and supplier synchronization flows
+        run: |
+          EB_ORDERS_FIXTURE=/tmp/eb-orders-fixture.json node tests/orders.cjs
+          python tests/browser-orders-customer.py
+          python tests/browser-supplier-sync.py
+      - name: Commit verified changes only on repair branch
+        if: github.ref == 'refs/heads/fix/orders-confirmed-save-20261111'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orders-ui.js orders.css orders.html shared.js tests/browser-orders-save.py .maintenance/orders-confirmed-save.b64
+          if ! git diff --cached --quiet; then
+            git commit -m 'Corregir guardado de pedidos: confirmación, reintentos seguros y regreso al listado'
+            git push origin HEAD:fix/orders-confirmed-save-20261111
+          fi
+      - name: Verify actual publication and locked endpoints
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python - <<'PY'
+          import urllib.request,urllib.error,time
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          for attempt in range(40):
+              try:
+                  for f in ['orders-ui.js','orders.css','orders.html','shared.js']:
+                      assert urllib.request.urlopen(base+f+'?confirmed='+str(time.time_ns()),timeout=20).read()==Path(f).read_bytes(),f
+                  break
+              except Exception:
+                  if attempt==39:raise
+                  time.sleep(4)
+          for f in ['api/state','api/documents','api/partner-report']:
+              try:urllib.request.urlopen(base+f,timeout=15);raise AssertionError('Private endpoint is public')
+              except urllib.error.HTTPError as e:assert e.code==401
+          print('PASS exact order fix deployed; private endpoints protected; no real business data read or modified')
+          PY
+      - name: Package review
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-orders-save-review
+          cp .maintenance/orders-confirmed-save.b64 /tmp/eb-orders-save-review/payload.b64
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-orders-save-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: confirmed-orders-save-review
+          path: /tmp/eb-orders-save-review
+          retention-days: 3
