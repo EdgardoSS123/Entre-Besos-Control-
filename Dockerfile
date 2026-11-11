@@ -58,6 +58,10 @@ COPY material-moves-core.js material-moves-ui.js ./
 COPY tests/material-moves.cjs ./tests/
 RUN node --check material-moves-core.js && node --check material-moves-ui.js && node tests/material-moves.cjs
 
+COPY orders-coverage.js ./
+COPY tests/orders-coverage.cjs ./tests/
+RUN node --check orders-coverage.js && node tests/orders-coverage.cjs
+
 FROM nginx:alpine AS static
 # Preserve previous modules and data keys. Publish the tested lot workspace.
 COPY index.html /usr/share/nginx/html/legacy.html
@@ -82,9 +86,10 @@ COPY edit-return.js /usr/share/nginx/html/
 COPY suppliers.html suppliers-core.js suppliers-ui.js suppliers.css /usr/share/nginx/html/
 COPY documents-batch.js documents-batch.css /usr/share/nginx/html/
 COPY material-moves-core.js material-moves-ui.js material-moves.css /usr/share/nginx/html/
+COPY orders-coverage.js orders-coverage.css /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN set -eu; nginx; \
-    for asset in material-moves-core.js material-moves-ui.js material-moves.css documents-batch.js documents-batch.css suppliers.html suppliers-core.js suppliers-ui.js suppliers.css edit-return.js orders.html orders-core.js orders-ui.js orders.css documents.html documents-ui.js documents.css contacts-import.js vendor/fflate.js office.html office.css office-ui.js office-nav.js contacts-core.js executive-core.js app.webmanifest instalar.html packaging.js device-backup.js pwa.js pwa.css icons/eb-180.png icons/eb-192.png icons/eb-512.png icons/eb-maskable-512.png reports-data.js reports-pdf.js vendor/jspdf.umd.min.js vendor/jspdf.plugin.autotable.min.js materials.html materials-core.js materials-ui.js materials.css corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
+    for asset in orders-coverage.js orders-coverage.css material-moves-core.js material-moves-ui.js material-moves.css documents-batch.js documents-batch.css suppliers.html suppliers-core.js suppliers-ui.js suppliers.css edit-return.js orders.html orders-core.js orders-ui.js orders.css documents.html documents-ui.js documents.css contacts-import.js vendor/fflate.js office.html office.css office-ui.js office-nav.js contacts-core.js executive-core.js app.webmanifest instalar.html packaging.js device-backup.js pwa.js pwa.css icons/eb-180.png icons/eb-192.png icons/eb-512.png icons/eb-maskable-512.png reports-data.js reports-pdf.js vendor/jspdf.umd.min.js vendor/jspdf.plugin.autotable.min.js materials.html materials-core.js materials-ui.js materials.css corrections-core.js corrections-ui.js corrections.css simple-core.js simple-lot.js index.html control.js control.css production.css lot-operations.css inventory-core.js lot-operations.js commerce-core.js commerce-ui.js commerce.css legacy.html 'EB%20logo.jpg' 'EB%20espadin.jpg' 'EB%20Cup.jpg' 'EB%20DB.jpg'; do \
       wget -q -O /tmp/eb-resource "http://127.0.0.1/$asset"; \
       test -s /tmp/eb-resource; \
       echo "HTTP 200 VERIFIED: $asset"; \
