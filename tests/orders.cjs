@@ -10,7 +10,7 @@ let m=meta('order-test'),r=O.save(d,input,m,I);assert.equal(r.order.quantity,15)
 d=r.data;assert.equal(O.save(d,input,m,I).data,d,'Exact operation retry is a no-op');
 const pending=r.order;r=O.setStatus(d,pending.id,'delivered',meta(pending.id,pending),I);d=r.data;
 assert.equal(I.balance(d,'ORD-ESP').total,108);assert.equal(I.balance(d,'ORD-CUP').total,57);assert.equal(r.warnings.length,1,'Missing stock is visible, not blocked');
-let b=I.reconciliation(d,'ORD-ESP');assert.equal(b.orderDelivered,12);assert.equal(b.produced,120);assert.equal(b.sold,0);assert.equal(b.used,0);assert.equal(b.unexplained,0);assert.equal(b.accounted,120);assert.equal((d.lotSales||[]).length,0,'Deliveries must not fabricate sales');
+let b=I.reconciliation(d,'ORD-ESP');assert.equal(b.orderDelivered,12);assert.equal(b.produced,120);assert.equal(b.sold,12);assert.equal(b.used,0);assert.equal(b.unexplained,0);assert.equal(b.accounted,120);assert.equal((d.lotSales||[]).length,2,'One linked sale per order and lot');assert(d.lotSales.every(s=>s.stockEffect===false&&s.priceKnown===false&&s.payments.length===0),'No second debit, fabricated price or cash');
 let same=O.setStatus(d,r.order.id,'delivered',meta(r.order.id,r.order),I);assert(same.unchanged);assert.equal(I.balance(same.data,'ORD-ESP').total,108);
 assert.throws(()=>O.setStatus(d,pending.id,'delivered',meta(pending.id,pending),I),/cambió/,'Second device cannot overwrite a delivered order');
 const changed={...r.order,lines:[{product:0,lotId:'ORD-ESP',amount:'3',unit:'box'}]};r=O.save(d,changed,meta(r.order.id,r.order),I);d=r.data;assert.equal(I.balance(d,'ORD-ESP').total,102);assert.equal(I.balance(d,'ORD-CUP').total,60,'Removed line restores exactly its deduction');assert.equal(O.activeDebits(d,r.order.id).reduce((n,a)=>n-a.delta,0),18);
@@ -30,6 +30,6 @@ assert.throws(()=>O.save(q,{...input,lines:[{product:1,lotId:'ORD-ESP',amount:2,
 assert.throws(()=>O.save(q,{...input,lines:[{product:0,lotId:'ORD-ESP',amount:.5,unit:'bottle'}]},meta('fraction'),I),/completas/);
 assert.equal(O.validate(q,{...input,lines:[{product:0,lotId:'ORD-ESP',amount:.5,unit:'box'}]},I).quantity,3);
 assert.throws(()=>O.validate(q,{...input,date:'2026-02-30'},I),/fecha/);assert.throws(()=>O.validate(q,{...input,lines:[]},I));assert.throws(()=>O.validate(q,{...input,from:'Unknown'},I));
-const report=require('../executive-core.js').build(more.data,I);assert(report.sections.some(s=>s.title==='Salidas por pedidos'));assert.equal(report.summary.sold,0);assert(!JSON.stringify(report.sections).includes('Prueba aislada'));
+const report=require('../executive-core.js').build(more.data,I);assert(report.sections.some(s=>s.title==='Salidas por pedidos'));assert.equal(report.summary.sold,126);assert(!JSON.stringify(report.sections).includes('Prueba aislada'));
 if(process.env.EB_ORDERS_FIXTURE)require('node:fs').writeFileSync(process.env.EB_ORDERS_FIXTURE,original);
 console.log('PASS ORDERS: pending, mixed varieties, boxes, reversible single debit, repeat/stale writes, edit/rename/cancel, negative stock, reserved samples, counts, aggregate report and unrelated data preservation.');

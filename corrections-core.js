@@ -1,9 +1,9 @@
 'use strict';
 /* Explicit, reversible corrections. Never mutates input or changes stored data on load. */
 (function(root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory;
-  else root.EBLedger = factory(root.EBLedger);
-})(typeof window === 'undefined' ? globalThis : window, function(I) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = I=>factory(I,require('./orders-core.js'));
+  else root.EBLedger = factory(root.EBLedger,root.EBOrders);
+})(typeof window === 'undefined' ? globalThis : window, function(I,O) {
   const copy = x => JSON.parse(JSON.stringify(x));
   const fail = m => { throw Error(m); };
   const alive = x => x.status !== 'cancelled';
@@ -17,8 +17,8 @@
   function tag(v) {if(!I.LABELS.includes(v))fail('Selecciona una etiqueta válida.');return v;}
   function currency(v) {if(!I.CURRENCIES.includes(v))fail('Selecciona una moneda válida.');return v;}
   function bundle(d,ids) {const b={};for(const [k,arr] of Object.entries(d)){if(k==='editHistory'||!Array.isArray(arr))continue;const chosen=arr.filter(x=>k==='lots'?ids.includes(x.id):ids.some(id=>owns(x,id)));if(chosen.length)b[k]=copy(chosen);}return b;}
-  function validate(d,ids) {for(const id of ids)if((d.lots||[]).some(l=>l.id===id)){I.balance(d,id);for(const s of I.sales(d,id)){const paid=(s.payments||[]).reduce((a,p)=>a+p.amountCents,0);if(!Number.isSafeInteger(paid)||paid<0)fail('Revisa los pagos de la venta.');if(paid>0&&(!Number.isSafeInteger(s.totalCents)||paid>s.totalCents))fail('Los cobros superan el nuevo total. Corrige el pago antes de reducir la venta.');}}}
-  function finish(d,next,ids,title,meta={}) {validate(next,ids);const before=bundle(d,ids),after=bundle(next,ids);if(eq(before,after))return next;next.editHistory=next.editHistory||[];const positions={};for(const k of Object.keys(before))positions[k]=(d[k]||[]).map((x,i)=>(k==='lots'?ids.includes(x.id):ids.some(id=>owns(x,id)))?i:-1).filter(i=>i>=0);next.editHistory.push({id:meta.id,at:meta.stamp,lotIds:ids,title,before,after,positions,deleted:!!meta.deleted});return next;}
+  function validate(d,ids,baseline) {for(const id of ids)if((d.lots||[]).some(l=>l.id===id)){I.balance(d,id);for(const s of I.sales(d,id)){const old=baseline&&(baseline.lotSales||[]).find(x=>x.id===s.id&&x.lotId===id);if(old&&eq([s.quantity,s.totalCents,s.currency,s.payments],[old.quantity,old.totalCents,old.currency,old.payments]))continue;const paid=(s.payments||[]).reduce((a,p)=>a+p.amountCents,0);if(!Number.isSafeInteger(paid)||paid<0)fail('Revisa los pagos de la venta.');if(paid>0&&(!Number.isSafeInteger(s.totalCents)||paid>s.totalCents))fail('Los cobros superan el nuevo total. Corrige el pago antes de reducir la venta.');}}}
+  function finish(d,next,ids,title,meta={}) {validate(next,ids,d);const before=bundle(d,ids),after=bundle(next,ids);if(eq(before,after))return next;next.editHistory=next.editHistory||[];const positions={};for(const k of Object.keys(before))positions[k]=(d[k]||[]).map((x,i)=>(k==='lots'?ids.includes(x.id):ids.some(id=>owns(x,id)))?i:-1).filter(i=>i>=0);next.editHistory.push({id:meta.id,at:meta.stamp,lotIds:ids,title,before,after,positions,deleted:!!meta.deleted});return next;}
   function relatedCount(d,id){return Object.entries(bundle(d,[id])).filter(([k])=>k!=='lots'&&!k.toLowerCase().includes('revision')).reduce((s,[,v])=>s+v.length,0);}
   function correctLot(d,id,record,expected,meta) {
     const old=getLot(d,id);checkToken(old,expected);if(old.p!==record.p&&(d.partnerOrders||[]).some(r=>!['cancelled','deleted'].includes(r.status)&&r.lines.some(l=>l.lotId===id)))fail('Corrige primero los pedidos vinculados antes de cambiar la variedad del lote.');const newId=String(record.id||'').trim();
@@ -35,7 +35,7 @@
   function find(d,id,kind,rid) {getLot(d,id);const map={sale:'lotSales',move:'lotShipments',sample:'lotSampleActions',count:'lotStockAdjustments'};const k=map[kind];if(!k)fail('Tipo de registro desconocido.');const r=(d[k]||[]).find(x=>x.id===rid&&x.lotId===id);if(!r)fail('Registro no encontrado.');if(kind==='count'&&r.source==='partner-order')fail('Modifica o cancela esta entrega desde Pedidos; así se conserva el descuento correcto.');return{k,r};}
   function correctSale(d,id,rid,p,expected,meta,now) {
     const {r:s}=find(d,id,'sale',rid);checkToken(s,expected);const next=copy(d),t=next.lotSales.find(x=>x.id===rid&&x.lotId===id);
-    const mode=s.shipmentId?'shipment':p.historical?'historical':'direct',historical=mode==='historical';
+    const mode=s.source==='partner-order'?'order':s.shipmentId?'shipment':p.historical?'historical':'direct',historical=mode==='historical';
     const n=I.quantity(p.amount,p.unit),price=String(p.price??'').trim().replace(',','.');
     if(!price&&!historical&&s.priceKnown!==false)fail('Captura el precio de venta.');
     const oldBottle=s.priceCents==null?'':Number((s.priceCents/100/(s.priceBasis==='box'?6:1)).toFixed(6)).toString();
@@ -46,11 +46,22 @@
     if(s.currency!==p.currency&&paid)fail('Esta venta tiene cobros. Corrige o elimina esos pagos antes de cambiar la moneda.');
     const saleDate=date(p.date,now,historical||!!s.inventoryAppliedDate),o=I.opening(d,id);
     if(historical&&saleDate&&o&&saleDate>o.asOf)fail('La venta anterior debe ser previa al conteo; puedes dejar la fecha pendiente.');
-    if(!historical&&!s.inventoryAppliedDate&&saleDate&&o&&saleDate<o.asOf)fail('La venta es anterior al conteo. Marca «Ya estaba vendida antes de mi conteo».');
+    if(mode!=='order'&&!historical&&!s.inventoryAppliedDate&&saleDate&&o&&saleDate<o.asOf)fail('La venta es anterior al conteo. Marca «Ya estaba vendida antes de mi conteo».');
     const due=p.dueDate?date(p.dueDate,'9999-12-31'):'';if(due&&saleDate&&due<saleDate)fail('El vencimiento es anterior a la venta.');
     Object.assign(t,{mode,stockEffect:mode==='direct',from:loc(d,p.from,historical),tag:tag(p.tag),quantity:n,inputAmount:Number(String(p.amount).replace(',','.')),inputUnit:p.unit,...q,priceKnown:!!price,paymentKnown:price?(p.paymentKnown!==false):false,currency:currency(p.currency),customer:String(p.customer||'').trim().slice(0,160)||'Cliente no identificado',date:saleDate,dueDate:due,notes:String(p.notes||'').slice(0,2000),reference:String(p.reference||'').slice(0,160),updatedAt:meta.stamp});
     t.costMXN=Number.isFinite(t.unitCostMXN)?Math.round(n*t.unitCostMXN*100)/100:null;
     if(s.shipmentId){const sh=next.lotShipments.find(x=>x.id===s.shipmentId);if(!sh||!alive(sh))fail('El envío asociado ya no está activo.');Object.assign(sh,{quantity:n,inputAmount:t.inputAmount,inputUnit:p.unit,from:t.from,tag:t.tag,updatedAt:meta.stamp});}
+    if(s.source==='partner-order'){
+      const order=(next.partnerOrders||[]).find(o=>o.id===s.orderId&&o.status==='delivered');
+      if(!order)fail('El pedido ya no está entregado. Actualiza antes de editar la venta.');
+      const ids=[...new Set(order.lines.map(l=>l.lotId))],source=(d.partnerOrders||[]).find(o=>o.id===s.orderId);
+      const line=order.lines.find(l=>l.lotId===id);if(!line)fail('El pedido ya no contiene este lote.');
+      const oldQuantity=order.lines.filter(l=>l.lotId===id).reduce((sum,l)=>sum+l.quantity,0);
+      let first=true;const revisedLines=oldQuantity===n&&s.tag===t.tag?order.lines:order.lines.flatMap(l=>{if(l.lotId!==id)return[l];if(!first)return[];first=false;return[{...l,amount:String(n),unit:'bottle',quantity:n,tag:t.tag}];});
+      const updated={...order,from:t.from,customer:t.customer,lines:revisedLines};
+      const result=O.save(next,updated,{id:order.id,expected:JSON.stringify(source),operation:meta.id,stamp:meta.stamp,day:now,actor:meta.actor||''},I);
+      return finish(d,result.data,ids,'Editar venta vinculada a '+order.code,meta);
+    }
     return finish(d,next,[id],'Editar venta de '+n+' botellas',meta);
   }
   function applySaleStock(d,id,rid,p,expected,meta,now) {
@@ -99,6 +110,14 @@
     return finish(d,next,[id],'Editar muestras',meta);}
   function correctPayment(d,id,sid,pid,p,expected,meta,now){const {r:s}=find(d,id,'sale',sid),original=(s.payments||[]).find(x=>x.id===pid);if(!original)fail('Pago no encontrado.');checkToken(original,expected);const next=copy(d),t=next.lotSales.find(x=>x.id===sid&&x.lotId===id).payments.find(x=>x.id===pid);Object.assign(t,{amountCents:amount(p.amount,true),date:date(p.date,now,s.mode==='historical'),reference:String(p.reference||'').slice(0,160),updatedAt:meta.stamp});return finish(d,next,[id],'Editar pago',meta);}
   function removeRecord(d,id,kind,rid,expected,meta,pid){const {k,r}=find(d,id,kind==='payment'?'sale':kind,rid);const next=copy(d);
+    if(kind==='sale'&&r.source==='partner-order'){
+      checkToken(r,expected);const order=(d.partnerOrders||[]).find(o=>o.id===r.orderId&&o.status==='delivered');
+      if(!order)fail('El pedido vinculado ya cambió. Actualiza la pantalla.');
+      const ids=[...new Set(order.lines.map(l=>l.lotId))],remaining=order.lines.filter(l=>l.lotId!==id);
+      const opts={id:order.id,expected:JSON.stringify(order),operation:meta.id,stamp:meta.stamp,day:(meta.localDate||O.today()),actor:meta.actor||''};
+      const result=remaining.length?O.save(d,{...order,lines:remaining},opts,I):O.save(d,null,{...opts,action:'cancel'},I);
+      return finish(d,result.data,ids,'Eliminar venta de '+id+' vinculada a '+order.code,{...meta,deleted:true});
+    }
     if(kind==='payment'){const p=(r.payments||[]).find(x=>x.id===pid);if(!p)fail('Pago no encontrado.');checkToken(p,expected);next[k].find(x=>x.id===rid&&x.lotId===id).payments=r.payments.filter(x=>x.id!==pid);}
     else{checkToken(r,expected);next[k]=next[k].filter(x=>!(x.id===rid&&x.lotId===id));
       if(kind==='sale'&&r.shipmentId)next.lotShipments=(next.lotShipments||[]).filter(x=>x.id!==r.shipmentId);
@@ -107,6 +126,6 @@
     return finish(d,next,[id],'Eliminar '+({sale:'venta',move:'movimiento',sample:'registro de muestras',count:'conteo',payment:'pago'}[kind]),{...meta,deleted:true});
   }
   function correctStock(d,id,p,meta,now){const next=I.countStock(d,id,{...p,id:meta.id,stamp:meta.stamp},now);return finish(d,next,[id],p.remove?'Eliminar existencia de '+p.location:'Corregir existencia de '+p.location,{...meta,deleted:!!p.remove});}
-  function undo(d,hid,meta){const h=(d.editHistory||[]).find(x=>x.id===hid&&!x.undoneAt);if(!h)fail('Esta corrección ya no se puede deshacer.');if(!eq(bundle(d,h.lotIds),h.after))fail('Hay cambios posteriores en este lote. Deshaz primero el cambio más reciente para no perder información.');const next=copy(d);for(const k of new Set([...Object.keys(h.before),...Object.keys(h.after)])){const remaining=(next[k]||[]).filter(x=>k==='lots'?!h.lotIds.includes(x.id):!h.lotIds.some(id=>owns(x,id)));copy(h.before[k]||[]).forEach((r,i)=>remaining.splice(Math.min(h.positions?.[k]?.[i]??remaining.length,remaining.length),0,r));next[k]=remaining;}validate(next,h.lotIds);next.editHistory.find(x=>x.id===hid).undoneAt=meta.stamp;return next;}
+  function undo(d,hid,meta){const h=(d.editHistory||[]).find(x=>x.id===hid&&!x.undoneAt);if(!h)fail('Esta corrección ya no se puede deshacer.');if(!eq(bundle(d,h.lotIds),h.after))fail('Hay cambios posteriores en este lote. Deshaz primero el cambio más reciente para no perder información.');const next=copy(d);for(const k of new Set([...Object.keys(h.before),...Object.keys(h.after)])){const remaining=(next[k]||[]).filter(x=>k==='lots'?!h.lotIds.includes(x.id):!h.lotIds.some(id=>owns(x,id)));copy(h.before[k]||[]).forEach((r,i)=>remaining.splice(Math.min(h.positions?.[k]?.[i]??remaining.length,remaining.length),0,r));next[k]=remaining;}validate(next,h.lotIds,d);next.editHistory.find(x=>x.id===hid).undoneAt=meta.stamp;for(const order of next.partnerOrders||[]){const before=(d.partnerOrders||[]).find(o=>o.id===order.id);if(before&&!eq(before,order))(next.partnerOrderHistory=next.partnerOrderHistory||[]).push({id:meta.id+'-'+order.id,orderId:order.id,at:meta.stamp,actor:meta.actor||'',action:'undo-sale-correction',before:copy(before),after:copy(order)});}return next;}
   return{...I,correctionsVersion:'1.0',correctLot,removeLot,correctSale,applySaleStock,correctMove,correctSample,correctPayment,removeRecord,correctStock,undoCorrection:undo,relatedCount};
 });

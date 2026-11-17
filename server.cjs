@@ -66,7 +66,7 @@ function createApp(options={}){
    try{
     const prior=db.prepare('SELECT revision,hash FROM revisions WHERE operation=?').get(op);
     if(prior){if(prior.hash!==hash)throw error(409,'Referencia de guardado duplicada.');db.exec('COMMIT');return json(res,200,{ok:true,revision:prior.revision});}
-    row=getState();if(input.revision!==row.revision)throw error(409,'Otro dispositivo guardó cambios. Se conservó tu captura, sin sobrescribir la base compartida.');
+    row=getState();if(row.payload&&JSON.parse(row.payload).orderSalesVersion===1&&input.data.orderSalesVersion!==1)throw error(409,'Esta copia usa una versión anterior de Pedidos. Recarga sin borrar datos antes de guardar.');try{require(path.join(root,'orders-core.js')).assertLinkedSales?.(input.data);}catch(e){throw error(409,e.message);}if(input.revision!==row.revision)throw error(409,'Otro dispositivo guardó cambios. Se conservó tu captura, sin sobrescribir la base compartida.');
     if(!row.payload&&input.initialize!==true)throw error(409,'Primero conecta la PC con tus datos actuales.');
     if(!row.payload&&!Object.values(input.data).some(v=>Array.isArray(v)&&v.length))throw error(400,'No se publicará una base vacía.');
     const updated=new Date().toISOString(),rev=row.revision+1;

@@ -10,6 +10,7 @@ COPY simple-core.js simple-lot.js ./
 COPY tests/simple-lot.cjs ./tests/
 RUN node --check simple-core.js && node --check simple-lot.js && node tests/simple-lot.cjs
 
+COPY orders-core.js ./
 COPY corrections-core.js corrections-ui.js ./
 COPY tests/corrections.cjs tests/origin-stock.cjs tests/always-samples.cjs ./tests/
 RUN node --check corrections-core.js && node --check corrections-ui.js && node tests/corrections.cjs && node tests/origin-stock.cjs && node tests/always-samples.cjs

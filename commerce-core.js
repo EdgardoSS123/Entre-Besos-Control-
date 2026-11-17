@@ -44,7 +44,7 @@
       else if(a.type==='release')r.sampleQuantity-=a.quantity;
       else if(a.type==='consume'){r.quantity-=a.quantity;if(a.sourceSampleQuantity!==undefined)r.sampleQuantity-=a.sourceSampleQuantity;else if(a.stockType!=='commercial')r.sampleQuantity-=a.quantity;samplesUsed+=a.quantity;}
     }
-    for(const s of sales(d,id))if(s.stockEffect){row(s.from,s.tag).quantity-=s.quantity;directSales+=s.quantity;}
+    for(const s of sales(d,id))if(s.stockEffect){row(s.from,s.tag).quantity-=s.quantity;directSales+=s.quantity;}else if(s.source==='partner-order'&&s.mode==='order')directSales+=s.quantity;
     const rows=[...map.values()].map(r=>({...r,commercialQuantity:r.quantity-r.sampleQuantity}));
     if(rows.some(r=>!Number.isSafeInteger(r.quantity)||!Number.isSafeInteger(r.sampleQuantity)||!Number.isSafeInteger(r.commercialQuantity)))fail('La cantidad de inventario está fuera de rango.');
     const total=rows.reduce((n,r)=>n+r.quantity,0),sampleTotal=rows.reduce((n,r)=>n+r.sampleQuantity,0);
