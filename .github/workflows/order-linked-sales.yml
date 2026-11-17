@@ -1,0 +1,91 @@
+name: Verify delivered order sales and correction saves
+on:
+  push:
+    branches: [main, fix/linked-order-sales-20261116]
+    paths: ['.maintenance/order-sales-delta.json', '.github/scripts/apply-order-sales.py', '.github/scripts/order-sales-followup.py', '.github/workflows/order-linked-sales.yml', 'orders-core.js', 'corrections-core.js', 'corrections-ui.js', 'commerce-core.js', 'simple-core.js', 'server.cjs', 'tests/order-linked-sales.cjs', 'tests/browser-order-linked-sales.py']
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.56.0-noble
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply reviewed code on isolated branch only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          python3 .github/scripts/apply-order-sales.py
+          if test -f .github/scripts/order-sales-followup.py; then python3 .github/scripts/order-sales-followup.py; fi
+      - name: Verify all calculation and permission suites
+        run: |
+          mkdir -p /tmp/eb-linked-review
+          for f in *.js *.cjs; do node --check "$f"; done
+          for f in tests/*.cjs; do node --experimental-sqlite "$f" || exit; done | tee /tmp/eb-linked-review/unit.log
+      - name: Prepare browser runtime
+        if: github.ref != 'refs/heads/main'
+        run: |
+          sh .github/scripts/build-pdf.sh
+          python3 -m pip install playwright==1.56.0
+      - name: Test actual order delivery sales editing deletion and full storage
+        if: github.ref != 'refs/heads/main'
+        env:
+          EB_LINKED_REVIEW: /tmp/eb-linked-review
+          EB_ORDERS_SAVE_REVIEW: /tmp/eb-linked-review
+        run: |
+          EB_BROWSER=chromium python3 tests/browser-order-linked-sales.py 2>&1 | tee /tmp/eb-linked-review/chromium-linked.log
+          EB_BROWSER=webkit python3 tests/browser-order-linked-sales.py 2>&1 | tee /tmp/eb-linked-review/webkit-linked.log
+          EB_BROWSER=chromium python3 tests/browser-orders-save.py 2>&1 | tee /tmp/eb-linked-review/orders.log
+          EB_BROWSER=webkit python3 tests/browser-storage-quota.py 2>&1 | tee /tmp/eb-linked-review/quota.log
+      - name: Commit only verified integration
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          paths=[x['path'] for x in json.loads(Path('.maintenance/order-sales-delta.json').read_text())]
+          subprocess.run(['git','add','--',*paths,'tests/browser-order-linked-sales.py'],check=True)
+          PY
+          if ! git diff --cached --quiet; then
+            git commit -m 'Vincular pedidos entregados a ventas sin duplicar descuentos y confirmar eliminaciones'
+            git push origin HEAD:fix/linked-order-sales-20261116
+          fi
+      - name: Verify deployed code and protected data
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python3 - <<'PY'
+          import time,urllib.request,urllib.error
+          from pathlib import Path
+          base='https://entre-besos-web-production.up.railway.app/'
+          paths=['orders-core.js','corrections-core.js','corrections-ui.js','commerce-core.js','simple-core.js','orders-ui.js','orders.html']
+          for attempt in range(45):
+              try:
+                  for p in paths:assert urllib.request.urlopen(base+p+'?verify='+str(time.time_ns()),timeout=15).read()==Path(p).read_bytes(),p
+                  break
+              except Exception:
+                  if attempt==44:raise
+                  time.sleep(4)
+          try:urllib.request.urlopen(base+'api/state',timeout=15);raise AssertionError('Unexpected public data')
+          except urllib.error.HTTPError as e:assert e.code==401
+          print('PASS exact deployed source and private state. No production records altered by tests.')
+          PY
+      - name: Package evidence
+        if: always()
+        run: |
+          mkdir -p /tmp/eb-linked-review
+          tar --exclude='.git' --exclude='pdf-deps/node_modules' -czf /tmp/eb-linked-review/tested-source.tgz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: order-linked-sales-review
+          path: /tmp/eb-linked-review
+          retention-days: 3
