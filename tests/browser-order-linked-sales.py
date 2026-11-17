@@ -29,7 +29,7 @@ try:
   p.goto(BASE);ready(p);p.locator('[data-simple-open="ESP"]').click();expect(p.locator('#simple-current')).to_have_text('108');expect(p.locator('#simple-sold')).to_have_text('12');expect(p.locator('#simple-difference')).to_have_text('0')
   p.locator('.simple-history').evaluate('(e)=>e.open=true');expect(p.locator('[data-record-edit="'+sid+'"]').first).to_be_visible()
   filled=p.evaluate("()=>{let i=0;try{for(;i<1000;i++)localStorage.setItem('synthetic-fill-'+i,'x'.repeat(32000));}catch(e){return {keys:i,name:e.name};}throw Error('quota not reached')}");assert filled['name']=='QuotaExceededError'
-  p.locator('[data-record-edit="'+sid+'"]').first.click();p.locator('#edit-price').fill('850');p.locator('#edit-payment-known').select_option('yes',force=True);p.locator('dialog[open] [data-save]').click();expect(p.locator('dialog[open]')).to_have_count(0,timeout=20000);ready(p)
+  p.evaluate("()=>{let low=0,high=64000;while(low+1<high){const mid=Math.floor((low+high)/2);try{localStorage.setItem('synthetic-tail','x'.repeat(mid));low=mid;}catch(e){if(e.name!=='QuotaExceededError')throw e;high=mid;}}}");p.locator('[data-record-edit="'+sid+'"]').first.click();p.locator('#edit-price').fill('850');p.locator('#edit-payment-known').select_option('yes',force=True);p.locator('dialog[open] [data-save]').click();expect(p.locator('dialog[open]')).to_have_count(0,timeout=20000);ready(p)
   now=cloud(ctx);assert now['lotSales'][0]['totalCents']==1020000;assert now['lotStockAdjustments']==d['lotStockAdjustments'];expect(p.locator('#simple-current')).to_have_text('108')
   p.locator('.simple-history').evaluate('(e)=>e.open=true');failed={'on':True}
   def route(r):
