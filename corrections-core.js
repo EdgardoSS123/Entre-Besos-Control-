@@ -35,6 +35,7 @@
   function find(d,id,kind,rid) {getLot(d,id);const map={sale:'lotSales',move:'lotShipments',sample:'lotSampleActions',count:'lotStockAdjustments'};const k=map[kind];if(!k)fail('Tipo de registro desconocido.');const r=(d[k]||[]).find(x=>x.id===rid&&x.lotId===id);if(!r)fail('Registro no encontrado.');if(kind==='count'&&r.source==='partner-order')fail('Modifica o cancela esta entrega desde Pedidos; así se conserva el descuento correcto.');return{k,r};}
   function correctSale(d,id,rid,p,expected,meta,now) {
     const {r:s}=find(d,id,'sale',rid);checkToken(s,expected);const next=copy(d),t=next.lotSales.find(x=>x.id===rid&&x.lotId===id);
+    const linkedOrder=s.source==='partner-order'?(d.partnerOrders||[]).find(o=>o.id===s.orderId):null,pricedOrder=linkedOrder?.pricingVersion===1;
     const mode=s.source==='partner-order'?'order':s.shipmentId?'shipment':p.historical?'historical':'direct',historical=mode==='historical';
     const n=I.quantity(p.amount,p.unit),price=String(p.price??'').trim().replace(',','.');
     if(!price&&!historical&&s.priceKnown!==false)fail('Captura el precio de venta.');
@@ -42,6 +43,14 @@
     const unchangedLegacy=p.priceBasis==='bottle'&&s.priceBasis==='box'&&price!==''&&Number(price)===Number(oldBottle);
     const q=unchangedLegacy?I.quote(n,(s.priceCents/100).toFixed(2),'box'):price?I.quote(n,price,p.priceBasis):{priceCents:null,totalCents:null,priceBasis:p.priceBasis||'bottle'};
     if(unchangedLegacy&&n===s.quantity)q.totalCents=s.totalCents;
+    if(pricedOrder){
+      if(p.currency!=='MXN')fail('El pedido está calculado en MXN. Conserva esa moneda en su venta vinculada.');
+      const bottlePrice=q.priceCents/(q.priceBasis==='box'?6:1);
+      if(!Number.isSafeInteger(bottlePrice)||bottlePrice<=0)fail('Captura el precio por botella con máximo 2 decimales.');
+      q.priceCents=bottlePrice;q.priceBasis='bottle';
+      // Metadata-only edits must retain the exact allocated discount, including rounding cents.
+      if(n===s.quantity&&bottlePrice===s.priceCents)q.totalCents=s.totalCents;
+    }
     const paid=(s.payments||[]).reduce((a,x)=>a+x.amountCents,0);
     if(s.currency!==p.currency&&paid)fail('Esta venta tiene cobros. Corrige o elimina esos pagos antes de cambiar la moneda.');
     const saleDate=date(p.date,now,historical||!!s.inventoryAppliedDate),o=I.opening(d,id);
@@ -58,8 +67,9 @@
       const line=order.lines.find(l=>l.lotId===id);if(!line)fail('El pedido ya no contiene este lote.');
       const oldQuantity=order.lines.filter(l=>l.lotId===id).reduce((sum,l)=>sum+l.quantity,0);
       let first=true;const revisedLines=oldQuantity===n&&s.tag===t.tag?order.lines:order.lines.flatMap(l=>{if(l.lotId!==id)return[l];if(!first)return[];first=false;return[{...l,amount:String(n),unit:'bottle',quantity:n,tag:t.tag}];});
-      const updated={...order,from:t.from,customer:t.customer,lines:revisedLines};
-      const result=O.save(next,updated,{id:order.id,expected:JSON.stringify(source),operation:meta.id,stamp:meta.stamp,day:now,actor:meta.actor||''},I);
+      const orderLines=pricedOrder&&q.priceCents!==s.priceCents?revisedLines.map(l=>l.lotId===id?{...l,unitPriceCents:q.priceCents}:l):revisedLines;
+      const updated={...order,from:t.from,customer:t.customer,lines:orderLines};
+      const result=O.save(next,updated,{id:order.id,expected:JSON.stringify(source),operation:meta.id,stamp:meta.stamp,day:now,actor:meta.actor||'',preserveLegacyPricing:!pricedOrder},I);
       return finish(d,result.data,ids,'Editar venta vinculada a '+order.code,meta);
     }
     return finish(d,next,[id],'Editar venta de '+n+' botellas',meta);
@@ -114,7 +124,7 @@
       checkToken(r,expected);const order=(d.partnerOrders||[]).find(o=>o.id===r.orderId&&o.status==='delivered');
       if(!order)fail('El pedido vinculado ya cambió. Actualiza la pantalla.');
       const ids=[...new Set(order.lines.map(l=>l.lotId))],remaining=order.lines.filter(l=>l.lotId!==id);
-      const opts={id:order.id,expected:JSON.stringify(order),operation:meta.id,stamp:meta.stamp,day:(meta.localDate||O.today()),actor:meta.actor||''};
+      const opts={id:order.id,expected:JSON.stringify(order),operation:meta.id,stamp:meta.stamp,day:(meta.localDate||O.today()),actor:meta.actor||'',preserveLegacyPricing:order.pricingVersion!==1};
       const result=remaining.length?O.save(d,{...order,lines:remaining},opts,I):O.save(d,null,{...opts,action:'cancel'},I);
       return finish(d,result.data,ids,'Eliminar venta de '+id+' vinculada a '+order.code,{...meta,deleted:true});
     }

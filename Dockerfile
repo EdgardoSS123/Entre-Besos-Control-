@@ -45,8 +45,8 @@ COPY tests/documents.cjs ./tests/
 RUN node --check documents-store.cjs && node --experimental-sqlite tests/documents.cjs
 
 COPY orders-core.js orders-ui.js ./
-COPY tests/orders.cjs ./tests/
-RUN node --check orders-core.js && node --check orders-ui.js && node tests/orders.cjs
+COPY tests/orders.cjs tests/orders-pricing.cjs tests/pricing-corrections.cjs ./tests/
+RUN node --check orders-core.js && node --check orders-ui.js && node tests/orders.cjs && node tests/orders-pricing.cjs && node tests/pricing-corrections.cjs
 
 COPY suppliers-core.js suppliers-ui.js ./
 COPY tests/suppliers.cjs ./tests/

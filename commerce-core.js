@@ -94,7 +94,7 @@
     balance(next,id);return next;
   }
   function quote(n,price,basis){if(!['bottle','box'].includes(basis))fail('El precio debe ser por botella o por caja de 6.');const value=cents(price,false),totalCents=Math.round(n*value/(basis==='box'?6:1));if(!Number.isSafeInteger(totalCents)||totalCents<=0)fail('Revisa el total de la venta.');return{priceCents:value,priceBasis:basis,totalCents};}
-  function status(s,now){if(s.priceKnown===false)return{paidCents:null,pendingCents:null,status:'Precio pendiente',overdue:false};if(s.paymentKnown===false)return{paidCents:null,pendingCents:null,status:'Pago no informado',overdue:false};const paidCents=(s.payments||[]).reduce((n,p)=>n+p.amountCents,0),pendingCents=s.totalCents-paidCents;return{paidCents,pendingCents,status:pendingCents===0?'Pagada':paidCents>0?'Pago parcial':'Pendiente',overdue:pendingCents>0&&!!s.dueDate&&s.dueDate<now};}
+  function status(s,now){if(s.priceKnown===false)return{paidCents:null,pendingCents:null,status:'Precio pendiente',overdue:false};if(s.paymentKnown===false)return{paidCents:null,pendingCents:null,status:'Pago no informado',overdue:false};const paidCents=(s.payments||[]).reduce((n,p)=>n+p.amountCents,0),pendingCents=s.totalCents-paidCents;return{paidCents,pendingCents,status:s.orderPricingVersion===1&&s.totalCents===0&&paidCents===0?'Sin saldo por descuento':pendingCents===0?'Pagada':paidCents>0?'Pago parcial':'Pendiente',overdue:pendingCents>0&&!!s.dueDate&&s.dueDate<now};}
   function saveSale(d,id,input,now){
     const l=lot(d,id);unique(d,input.id);validateDate(input.date,now);
     const mode=input.mode||'direct';if(!['direct','shipment','historical'].includes(mode))fail('Selecciona cómo registrar la venta.');

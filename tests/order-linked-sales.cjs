@@ -10,10 +10,10 @@ let r=O.save(d,fields,{...meta(),id:'one'},I);assert(!r.data.lotSales);assert.eq
 r=O.setStatus(r.data,'one','delivered',{...meta(),expected:JSON.stringify(r.order)},I);d=r.data;
 assert.equal(I.sales(d,'ESP').length,1);assert.equal(I.sales(d,'ESP')[0].quantity,13);assert.equal(I.sales(d,'CUP')[0].quantity,3);
 assert.equal(I.reconciliation(d,'ESP').total,87);assert.equal(I.reconciliation(d,'ESP').sold,13);assert.equal(I.reconciliation(d,'ESP').unexplained,0);assert.equal(I.reconciliation(d,'ESP').orderUnclassified,0);
-const s=I.sales(d,'ESP')[0];assert.equal(s.priceCents,null);assert.equal(s.totalCents,null);assert.equal(s.priceKnown,false);assert.equal(s.paymentKnown,false);assert.deepEqual(s.payments,[]);assert.equal(s.orderPartner,'ricardo');
+const s=I.sales(d,'ESP')[0];assert.equal(s.priceCents,110000);assert.equal(s.totalCents,1430000);assert.equal(s.priceKnown,true);assert.equal(s.paymentKnown,true);assert.deepEqual(s.payments,[]);assert.equal(s.orderPartner,'ricardo');
 assert.equal(O.synchronizeSales(d,I),d);O.assertLinkedSales(d);
-const legacy=structuredClone(d);legacy.lotSales=[];delete legacy.orderSalesVersion;
-const migrated=O.synchronizeSales(legacy,I);assert.equal(I.balance(migrated,'ESP').total,87);assert.deepEqual(migrated.lotStockAdjustments,legacy.lotStockAdjustments);assert.equal(O.synchronizeSales(migrated,I),migrated);
+const legacy=structuredClone(d);legacy.lotSales=[];delete legacy.orderSalesVersion;for(const o of legacy.partnerOrders){for(const key of ['pricingVersion','currency','discount','subtotalCents','discountCents','totalCents'])delete o[key];for(const l of o.lines)delete l.unitPriceCents;}
+const migrated=O.synchronizeSales(legacy,I);assert.equal(I.balance(migrated,'ESP').total,87);assert.deepEqual(migrated.lotStockAdjustments,legacy.lotStockAdjustments);assert.equal(O.synchronizeSales(migrated,I),migrated);assert.equal(migrated.lotSales[0].priceKnown,false);assert.equal(migrated.lotSales[0].totalCents,null);
 const exits=JSON.stringify(d.lotStockAdjustments);
 const p={historical:false,from:s.from,tag:s.tag,amount:s.quantity,unit:'bottle',price:'850',priceBasis:'bottle',customer:s.customer,currency:'MXN',date:now,dueDate:'',reference:s.orderCode,notes:'Price added',paymentKnown:true};
 d=I.correctSale(d,'ESP',s.id,p,JSON.stringify(s),meta(),now);assert.equal(JSON.stringify(d.lotStockAdjustments),exits,'Price alone never repeats exits');assert.equal(I.sales(d,'ESP')[0].totalCents,1105000);assert.equal(I.reconciliation(d,'ESP').total,87);O.assertLinkedSales(d);
@@ -28,4 +28,4 @@ const double=structuredClone(d);double.lotSales[0].stockEffect=true;assert.throw
 const v=structuredClone(d);v.lotSales.push({id:'old-bad',lotId:'DB',mode:'historical',stockEffect:false,quantity:1,priceKnown:true,paymentKnown:true,priceCents:100,totalCents:100,currency:'MXN',payments:[{id:'cash-old',amountCents:200}]},{id:'manual',lotId:'DB',mode:'direct',stockEffect:true,from:'CDMX',tag:'Por clasificar',quantity:2,priceCents:500,totalCents:1000,priceKnown:true,paymentKnown:true,currency:'MXN',payments:[]});
 const deleted=I.removeRecord(v,'DB','sale','manual',JSON.stringify(v.lotSales.at(-1)),meta());assert.equal(I.balance(deleted,'DB').total,60);assert.deepEqual(deleted.lotSales.find(x=>x.id==='old-bad'),v.lotSales.find(x=>x.id==='old-bad'));
 for(const key of ['contacts','materials','supplies'])assert.deepEqual(d[key],JSON.parse(snapshot)[key]);
-console.log('PASS ORDER SALES: delivered-to-sale, lot aggregation, single debit, migration idempotence, price/cash unknown, edit, partial delete, exact reversal, undo history, stale client protection, unrelated records preserved');
+console.log('PASS ORDER SALES: delivered-to-sale, lot aggregation, single debit, migration idempotence, legacy price/cash unknown, priced orders, edit, partial delete, exact reversal, undo history, stale client protection, unrelated records preserved');

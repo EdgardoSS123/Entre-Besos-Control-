@@ -24,7 +24,7 @@ try:
   r=ctx.request.put(BASE+'api/state',data={'revision':0,'initialize':True,'operation':str(uuid.uuid4()),'data':seed},headers={'Origin':BASE[:-1],'X-EB-CSRF':csrf});assert r.ok,r.text()
   p=ctx.new_page();errors=[];p.on('pageerror',lambda e:errors.append(str(e)));p.on('dialog',lambda d:d.accept());p.goto(BASE+'orders.html?partner=ricardo');ready(p)
   p.locator('#order-new').click();p.locator('#order-customer').fill('Synthetic recipient');p.locator('[data-amount]').fill('2');p.locator('#order-status').select_option('delivered');p.locator('#order-save').click();expect(p.locator('#order-dialog')).to_have_count(0,timeout=20000);ready(p)
-  d=cloud(ctx);sale=d['lotSales'][0];sid=sale['id'];assert sale['quantity']==12 and sale['priceKnown'] is False and sale['stockEffect'] is False
+  d=cloud(ctx);sale=d['lotSales'][0];sid=sale['id'];assert sale['quantity']==12 and sale['priceKnown'] is True and sale['priceCents']==110000 and sale['totalCents']==1320000 and sale['payments']==[] and sale['stockEffect'] is False
   assert sum(-a['delta'] for a in d['lotStockAdjustments'] if a.get('status')!='cancelled')==12
   p.goto(BASE);ready(p);p.locator('[data-simple-open="ESP"]').click();expect(p.locator('#simple-current')).to_have_text('108');expect(p.locator('#simple-sold')).to_have_text('12');expect(p.locator('#simple-difference')).to_have_text('0')
   p.locator('.simple-history').evaluate('(e)=>e.open=true');expect(p.locator('[data-record-edit="'+sid+'"]').first).to_be_visible()
